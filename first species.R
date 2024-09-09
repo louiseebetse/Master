@@ -16,30 +16,32 @@ setwd("/Users/louise/Desktop/UNIL/Master/Rstudio/Virtual species")
 my_variables <- mixedsort(list.files(path = "variables",
                                      pattern = NULL,
                                      full.names = TRUE))
-#rasterise my documents
+#rasterise my variables
 my_variables<- rast(my_variables)
 cat(crs(my_variables))
 #change the names of my variables
 names(my_variables) = c("ai","bio4", "bio6", "bio15","gdd3","pop2000", "pop5000", "rad", "dem", "slope", "canopy")
 #compute the curvature
 my_variables$dem<-terrain(my_variables$dem, v= "TPI")
-#plot a raster
-plot(my_variables)
+##plot a raster
+#plot(my_variables)
 #export the swiss shapefile
 swiss_shape<-st_read("swiss_shapefile.gpkg")
 
-#export my data from my file
+#export my species data from my file
 load("SPImaster/sp/1008910")
-C.kitaibelii<-clear(my.sp)
-C.kitaibelii <- SpatialPointsDataFrame(coords=C.kitaibelii[,6:7], data=C.kitaibelii[ , -c(6, 7)])
-C.kitaibelii<- remove.duplicates(C.kitaibelii, zero = 300)
-C.kitaibelii<- as.data.frame(C.kitaibelii)
+
+C.kitaibelii<-clear(my.sp) #clear my species data using clear()
+C.kitaibelii <- SpatialPointsDataFrame(coords=C.kitaibelii[,6:7], data=C.kitaibelii[ , -c(6, 7)]) #creating a SPDF with just the coordinates
+C.kitaibelii<- remove.duplicates(C.kitaibelii, zero = 300) #remove duplicate presence in a 300 radius?
+C.kitaibelii<- as.data.frame(C.kitaibelii) #come back to a data frame
 coord<- C.kitaibelii[,25:26]
 #plot(C.kitaibelii)
 
-#project the species coordinates
-plot(my_variables$bio15)
-points(C.kitaibelii)
+
+#plot(my_variables$bio15)
+#points(C.kitaibelii)
+#extract the variables coord at the species presence
 variablesValues<-data.frame(extract(my_variables,coord))
 head(variablesValues)
 
