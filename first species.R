@@ -15,12 +15,11 @@ setwd("/Users/louise/Desktop/UNIL/Master/Rstudio/Virtual species")
 load("SPImaster/sp/1008910")
 swiss_shape<-st_read("swiss_shapefile.gpkg")
 
-class(my.sp)
-SpatialPoints(my.sp[my.sp$x])
+C.kitaibelii<-clear(my.sp)
 coordinates(C.kitaibelii) <- c("x", "y")
-coordinates(my.sp) <- c("x", "y")
 C.kitaibelii<- remove.duplicates(C.kitaibelii, zero = 300)
-plot(C.kitaibelii)
+#plot(C.kitaibelii)
+
 mask(swissclim,swiss_shape, inverse= FALSE)
 
 
@@ -35,5 +34,5 @@ clear<- function(species){
  return(species)
 }
 
-C.kitaibelii<-clear(my.sp)
- 
+
+
