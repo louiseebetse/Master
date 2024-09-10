@@ -6,6 +6,8 @@ library(sf)
 library(gtools) # V.3.9.4
 library(data.table)
 library(sp)
+library(CovSel)
+library(np)
 
 
 #set the session to the right place
@@ -45,6 +47,17 @@ coord<- C.kitaibelii[,25:26]
 variablesValues<-data.frame(extract(my_variables,coord))
 head(variablesValues)
 
+#put the species data in the same table
+spData<- na.omit(data.frame(coord, variablesValues))
+head(spData)
+spData<-spData[,-3]#remove the id line
+spData$presence <- rep(1, times = length(spData$x))#put a presence line
+
+#can't use it
+args<- cov.sel(T=spData$presence, Y= spData$x, X= spData[,3:13], type = "np")
+
+glmStart<- glm(spData$presence~1, data=spData, family= "binomial")
+
 #function to clear the data
 clear<- function(species){
  species$date <- as.IDate(species$date)
@@ -58,6 +71,3 @@ clear<- function(species){
  species<- species[species$v_co_canton!="IT-25",]
  return(species)
 }
-
-
-
