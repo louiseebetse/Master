@@ -27,8 +27,10 @@ names(my_variables) = c("ai","bio4", "bio6", "bio15","gdd3","pop2000", "pop5000"
 my_variables$dem<-terrain(my_variables$dem, v= "TPI")
 ##plot a raster
 #plot(my_variables)
+
 #export the swiss shapefile
 swiss_shape<-st_read("swiss_shapefile.gpkg")
+swiss_shape <- st_transform(swiss_shape, crs = 2056)
 
 #export my species data from my file
 load("SPImaster/sp/1008910")
@@ -61,13 +63,32 @@ glmStart<- glm(spData$presence~1, data=spData, family= "binomial")
 #function to clear the data
 clear<- function(species){
  species$date <- as.IDate(species$date)
- species<- species[species$v_presence_status==2,]
- species<- species[species$v_introduction_status!=4,]
- species<- species[species$v_doubt_status<2,]
+ shapefile<-vect(swiss_shape$geom)
+ #take out data points which are outside of the shapefile
+ new_df <- data.frame(x = numeric(0), y = numeric(0))  # Create an empty data frame with same structure
+ 
+ check_within_base <- function(i) {
+  point <- vect(cbind(species$x[i], species$y[i]), type = "points")
+  is_within <- relate(point, shapefile, relation = "within")
+  
+  if (is_within) {
+   return(i)  # Return index of the row if it's within
+  } else {
+   return(NA)  # Return NA if not within
+  }
+ }
+ 
+ # Apply function to each row index
+ indices <- sapply(1:nrow(species), check_within_base)
+ 
+ # Filter the original data frame to keep only the points that are within the shapefile
+ new_df <- species[!is.na(indices), ]
+ species<-new_df
+ species<- species[species$v_presence_status==2,]#only presence
+ species<- species[species$v_introduction_status!=4,]#
+ species<- species[species$v_doubt_status<2,]#sure observation
  species<- species[species$v_xy_radius<= 100,]
  species <- species[!is.na(species$x), ]
  species<- species[species$date>=2004,]
- species<- species[species$v_co_canton!="IT-21",]
- species<- species[species$v_co_canton!="IT-25",]
  return(species)
 }
