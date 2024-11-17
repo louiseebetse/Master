@@ -17,11 +17,11 @@ my_variables <- mixedsort(list.files(path = "variables",
                                      pattern = NULL,
                                      full.names = TRUE))
 my_variables<- rast(my_variables)
-cat(crs(my_variables))
+#cat(crs(my_variables))
 names(my_variables) = c("ai","bio4", "bio6", "bio15","gdd3", "ph", "pop2000", "pop5000", "rad", "dem", "slope", "canopy")
+my_variables$rad <- project(my_variables$rad, "EPSG:2056")
 my_variables$dem<-terrain(my_variables$dem, v= "TPI")
 my_variables<- subset(my_variables, c("ai","bio4", "bio6", "bio15","gdd3", "ph", "dem", "slope", "canopy")) 
-
 
 #export the swiss shapefile
 swiss_shape<-st_read("swiss_shapefile.gpkg")
@@ -29,6 +29,7 @@ swiss_shape <- st_transform(swiss_shape, crs = 2056)
 
 #export my species data from my file
 #load("SPImaster/sp/1008880")
+#sp<-my.sp
 
 # Initialize a list to store the data
 data_list <- list()
@@ -96,6 +97,7 @@ my_distribution<- function(list_presences){
  species<- remove.duplicates(species, zero = 1000) #remove duplicate presence in a 300 radius?
  species<- as.data.frame(species) #come back to a data frame
  coord<- species[,c("x", "y")]
+ save(coord,file = paste("saved_data/species_1008910.RData"))
  
  #create a dataframe with presences and pseudo absences
  bg_rand <- terra::spatSample(my_variables$dem, 10000, "random", na.rm=T, as.points=TRUE)
@@ -164,15 +166,15 @@ my_distribution<- function(list_presences){
  #                                 slope = c(fun = 'fun1', h=df$h[9],b=df$b[9], c=df$c[9]),)
  # map_probability<- generateSpFromFun(raster.stack = my_variables[[c("bio6", "slope")]],
  #                                      parameters = my.responses, plot = TRUE)
- save(map_probability,file = paste("saved_data/map_proba_species_1008910.RData"))
+ saveRDS(map_probability,file = paste("saved_data/map_proba_species_1008910.RDS"))
  
  #create a distribution with a logistic method
  map_distribution <- convertToPA(map_probability,
                                  PA.method = "probability",
                                  prob.method = "logistic",
-                                 beta = 0.15, alpha = -0.07,
+                                 beta = 0.5, alpha = -0.07,
                                  plot = TRUE)
- save(map_distribution,file = paste("saved_data/map_distri_species_1008910.RData"))
+ saveRDS(map_distribution,file = paste("saved_data/map_distri_species_1008910.RDS"))
  #plot(map_distribution)
  
  #list_distribution[[name[sp]]]<-map_probability
@@ -182,54 +184,409 @@ my_distribution<- function(list_presences){
 #}
 
 
-pdf("my_plot.pdf")
+#pdf("my_plot.pdf")
 map_distr_species<-my_distribution(pt_list)
-dev.off()
+#dev.off()
 
+############################################################################
+#Sample real popu
+############################################################################
 
-save(map_distr_species,file ="map_distr_species.Rdata")
-load('../Virtual species/map_distr_species.Rdata')
-test <- terra::unwrap(map_distr_species[[1]]$suitab.raster)
-terra::plot(test)
+#save(map_distr_species,file ="map_distr_species.Rdata")
+#load('../Virtual species/map_distr_species.Rdata')
+#test <- terra::unwrap(map_distr_species[[1]]$suitab.raster)
+#terra::plot(test)
 
 #saveRDS(my.species, file = "MyVirtualSpecies.RDS")
-#RDSproba <- readRDS("saved_data/map_proba_species_1008910.RDS")
-#RDSproba[["suitab.raster"]]<-terra::unwrap(RDSproba[["suitab.raster"]])
-#terra::plot(RDSproba[["suitab.raster"]])
-#freq(map_distribution2$pa.raster)[freq(map_distribution2$pa.raster)$value == 1, "count"]
-#sample 2000 presences from the modified raster using weights of probability from the raster
-#output spatvector
-sample2<- spatSample(occ_species,size= 2000, method= "weights", na.rm= TRUE, as.points = TRUE)
+RDSproba <- readRDS("saved_data/map_proba_species_1008910.RDS")
+RDSproba[["suitab.raster"]]<-terra::unwrap(RDSproba[["suitab.raster"]])
+terra::plot(RDSproba[["suitab.raster"]])
+load("saved_data/species_1008910.RData")
 
+
+#extract probability for presences of the real species
+prob_real_species <- terra::extract(RDSproba[["suitab.raster"]], coord, ID= F)
+#find the probability value under above which we find x% of the sample
+quantile<- quantile(prob_real_species$`VSP suitability`, 0.3, na.rm= T)
+#i put all the raster values below this quantile values at 0
+prob_raster_quantile<-RDSproba[["suitab.raster"]]
+prob_raster_quantile[prob_raster_quantile < quantile] <- 0
+
+#sample 2000 presences from the modified raster(prob_raster_quantile) using 
+#weights of probability from the raster output spatvector
+sample2<- spatSample(prob_raster_quantile,size= 20000, method= "weights", na.rm= TRUE, as.points = TRUE)
+saveRDS(sample2,file = paste("saved_data/1008910_sample2.RDS"))
+sample2 <- readRDS("saved_data/1008910_sample2.RDS")
+
+#Stady popu 
+stady_stady_sample<- function(repetition, sample_size,sample_vector,proba_raster){
+ weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ plot(swiss_shape$geom) #i plot the shape of switzerland
+ 
+ start_color <- "#1c74c1" # First color
+ end_color <- "#fff064"   # Last color
+ repetition <- repetition
+ col <- colorRampPalette(c(start_color, end_color))(repetition)
+ indices_to_keep<-sample(nrow(sample_vector), size = sample_size, 
+                         prob = weights, replace = FALSE)# sample the individuals with weights
+ year<-sample2[indices_to_keep,]#recreate a spatvector from the desired individuals
+ for(i in 1:repetition){
+  year=year
+  points(year, col= col[i], pch= 20, cex =0.5)#make points on the map
+  saveRDS(year, paste("saved_data/stady_stady_sample/year",i,".RDS", sep=""))#save each year in a file
+ }
+ return(invisible(year))
+}
 
 #Increase
-#take the coordinates where i have presences and put 0 in raster map so it has 0 
-# probability to be chosen when randomly picked
-cells <- cellFromXY(occ_species_modif, crds(sample2))
-occ_species_modif[cells] <- 0
-#resample with the modified raster
-sample_growth<- spatSample(occ_species_modif,size= 2000, method= "weights", na.rm= TRUE, as.points = TRUE)
-#combine the two spatvector
-sample_growth2<- rbind(sample_growth, sample2)
+increase_sample<- function(repetition, sample_size,sample_vector,proba_raster, max_increase){
+ #set.seed(42)
+ weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ 
+ indices_to_keep<-sample(nrow(sample_vector), size = sample_size, 
+                         prob = weights, replace = FALSE)
+ year<-sample_vector[indices_to_keep,]#recreate a spatvector from the desired individuals
+ new_weights<-weights
+ new_weights[indices_to_keep]<-0
+ saveRDS(year, "saved_data/increase_sample/year1.RDS")
+ 
+ num_to_add <- (max_increase/(repetition-1))/100*sample_size
+ 
+ plot(swiss_shape$geom) #i plot the shape of switzerland
+
+ start_color <- "#1c74c1" # First color
+ end_color <- "#fff064"   # Last color
+ repetition <- repetition 
+ col <- colorRampPalette(c(start_color, end_color))(repetition) 
+ points(year, col= col[1], pch= 20, cex =0.5)
+ 
+ for(i in 1:(repetition - 1)){
+  indices_to_add<-sample(nrow(sample_vector), size = num_to_add, 
+                            prob = new_weights, replace = FALSE)# sample the individuals with weights
+  year<-rbind(year,sample_vector[indices_to_add,])#recreate a spatvector from the desired individuals
+  new_weights[indices_to_add]<-0
+  points(year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(year, paste("saved_data/increase_sample/year",i+1,".RDS", sep=""))#save each year in a file
+ }
+ return(invisible(year))
+}
 
 #Decrease
-#Extract the probability values at presence points locations
-prob_values <- terra::extract(occ_species, sample2, xy= TRUE)[, 2]
+decrease_sample<- function(repetition, sample_size,sample_vector,proba_raster, max_reduce){
+ #set.seed(42)
+ weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ inverse_weights <- 1 - weights
+ 
+ indices_to_keep<-sample(nrow(sample_vector), size = sample_size, 
+                         prob = weights, replace = FALSE)
+ year<-sample_vector[indices_to_keep,]#recreate a spatvector from the desired individuals
+ new_inverse_weights<-inverse_weights[indices_to_keep]
+ saveRDS(year, "saved_data/decrease_sample/year1.RDS")
+ 
+ num_to_delete <- (max_reduce/(repetition-1))/100*sample_size
+ 
+ plot(swiss_shape$geom) #i plot the shape of switzerland
+ start_color <- "#1c74c1" # First color
+ end_color <- "#fff064"   # Last color
+ repetition <- repetition  # Adjust as needed
+ col <- colorRampPalette(c(start_color, end_color))(repetition)
+ points(year, col= col[1], pch= 20, cex =0.5)
+ 
+ for(i in 1:(repetition - 1)){
+  indices_to_delete<-sample(nrow(year), size = num_to_delete, 
+                          prob = new_inverse_weights, replace = FALSE)# sample the individuals with weights
+  year<-year[-indices_to_delete,]#recreate a spatvector from the desired individuals
+  new_inverse_weights<-new_inverse_weights[-indices_to_delete]
+  points(year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(year, paste("saved_data/decrease_sample/year",i+1,".RDS", sep=""))#save each year in a file
+ }
+ return(invisible(year))
+}
 
-# 2. Normaliser les probabilités (si nécessaire) pour créer un facteur de pondération d'échantillonnage
-#Normalize the probabilities to create weights
-#We inverse proba so low proba of presence becomes high proba of absences
-weights <- 1 - prob_values
-
-# Tell how many points to delete 1000 = x
-num_to_keep <- nrow(sample2) - 1000 
-
-#Sample points locations that you want to throw depending on their weights
-set.seed(42)  # Pour des résultats reproductibles
-indices_to_delete <- sample(nrow(sample2), size = num_to_keep, prob = weights, replace = FALSE)
-
-# Create a new spatvector with the deleted sample
-sample_reduced <- sample2[-indices_to_delete, ]
 
 
+############################################################################
+#Sample with biais
+############################################################################
+my_biais <- mixedsort(list.files(path = "biais",
+                                     pattern = NULL,
+                                     full.names = TRUE))
+my_biais<- rast(my_biais)
+head(my_biais)
+names(my_biais)<-c("obs_Origin_1994", "obs_1995_2000", "obs_2001_2006", "obs_2007_2012",
+                   "obs_2013_2018", "obs_2019_2024",
+                   "Nobsvs_Origin_1994", "Nobsvs_1995_2000", "Nobsvs_2001_2006", "Nobsvs_2007_2012",
+                   "Nobsvs_2013_2018", "Nobsvs_2019_2024",
+                   "prop_pot_Origin-1994", "prop_pot_1995-2000", "prop_pot_2001-2006",  
+                   "prop_pot_2007-2012", "prop_pot_2013-2018", "prop_pot_2019-2024")
 
+test_biais2<- my_biais$obs_Origin_1994/ 231
+test_biais<- log(my_biais$obs_Origin_1994+1)
+
+biais_transformed<- my_biais
+for (i in 1:length(names(my_biais))){
+ biais_transformed[[i]]<-log(my_biais[[i]] + 1)
+}
+
+plot(my_biais[[7]])
+#Stady popu
+
+weights <- terra::extract(my_biais$obs_Origin_1994, year1, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+biais_sample<-sample(year1, size = 1000, prob = weights, replace = TRUE)
+
+sample_growth<- spatSample(my_biais$obs_Origin_1994,size= 2000, method= "weights", na.rm= TRUE, as.points = TRUE)
+
+
+biais_stady_sample<- function(repetition, sample_size,sample_vector,proba_raster, biais_raster){
+ par(mfrow = c(1, 2))
+ weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ plot(swiss_shape$geom) #i plot the shape of switzerland
+ plot(swiss_shape$geom)
+ start_color <- "#1c74c1" # First color
+ end_color <- "#fff064"   # Last color
+ repetition <- repetition
+ col <- colorRampPalette(c(start_color, end_color))(repetition)
+ indices_to_keep<-sample(nrow(sample_vector), size = sample_size, 
+                         prob = weights, replace = FALSE)# sample the individuals with weights
+ year<-sample2[indices_to_keep,]#recreate a spatvector from the desired individuals
+ for(i in 1:repetition){
+  year=year
+  par(mfg = c(1, 1))
+  points(year, col= col[i], pch= 20, cex =0.5)#make points on the map
+  saveRDS(year, paste("saved_data/biais_stable/year",i,".RDS", sep=""))#save each year in a file
+  
+  biais_weights<- terra::extract(biais_raster[[i]], year, xy= TRUE)[, 2]
+  biais_year<-sample(year, size = sample_size, prob = biais_weights, replace = TRUE)
+  unique_biais_year <- terra::unique(biais_year)
+  par(mfg = c(1, 2))
+  points(unique_biais_year, col= col[i], pch= 20, cex =0.5)#make points on the map
+  saveRDS(unique_biais_year, paste("saved_data/biais_stable/biais_year",i,".RDS", sep=""))#save each year in a file
+  
+ }
+ return(invisible(year))
+}
+
+biais_increase_sample<- function(repetition, sample_size,sample_vector,proba_raster, max_increase,biais_raster){
+ #set.seed(42)
+ par(mfrow = c(1, 2))
+ weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ 
+ indices_to_keep<-sample(nrow(sample_vector), size = sample_size, 
+                         prob = weights, replace = FALSE)
+ year<-sample_vector[indices_to_keep,]#recreate a spatvector from the desired individuals
+ new_weights<-weights
+ new_weights[indices_to_keep]<-0
+ saveRDS(year, "saved_data/biais_increase/year1.RDS")
+ 
+ biais_weights<- terra::extract(biais_raster[[1]], year, xy= TRUE)[, 2]
+ biais_year<-sample(year, size = sample_size, prob = biais_weights, replace = TRUE)
+ unique_biais_year <- terra::unique(biais_year)
+ saveRDS(unique_biais_year, paste("saved_data/biais_increase/biais_year1.RDS", sep=""))#save each year in a file
+ 
+ 
+ num_to_add <- (max_increase/(repetition-1))/100*sample_size
+ 
+ par(mfg = c(1, 1))
+ plot(swiss_shape$geom) #i plot the shape of switzerland
+ par(mfg = c(1, 2))
+ plot(swiss_shape$geom)
+ 
+ start_color <- "#1c74c1" # First color
+ end_color <- "#fff064"   # Last color
+ repetition <- repetition 
+ col <- colorRampPalette(c(start_color, end_color))(repetition)
+ par(mfg = c(1, 1))
+ points(year, col= col[1], pch= 20, cex =0.5)
+ par(mfg = c(1, 2))
+ points(unique_biais_year, col= col[1], pch= 20, cex =0.5)#make points on the map
+ 
+ 
+ for(i in 1:(repetition - 1)){
+  indices_to_add<-sample(nrow(sample_vector), size = num_to_add, 
+                         prob = new_weights, replace = FALSE)# sample the individuals with weights
+  year<-rbind(year,sample_vector[indices_to_add,])#recreate a spatvector from the desired individuals
+  new_weights[indices_to_add]<-0
+  par(mfg = c(1, 1))
+  points(year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(year, paste("saved_data/biais_increase/year",i+1,".RDS", sep=""))#save each year in a file
+  
+  biais_weights<- terra::extract(biais_raster[[i+1]], year, xy= TRUE)[, 2]
+  biais_year<-sample(year, size = sample_size+i*num_to_add, prob = biais_weights, replace = TRUE)
+  unique_biais_year <- terra::unique(biais_year)
+  par(mfg = c(1, 2))
+  points(unique_biais_year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(unique_biais_year, paste("saved_data/biais_increase/biais_year",i+1,".RDS", sep=""))#save each year in a file
+ }
+ return(invisible(year))
+}
+
+biais_decrease_sample<- function(repetition, sample_size,sample_vector,proba_raster, max_reduce,biais_raster){
+ #set.seed(42)
+ weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ inverse_weights <- 1 - weights
+ 
+ indices_to_keep<-sample(nrow(sample_vector), size = sample_size, 
+                         prob = weights, replace = FALSE)
+ year<-sample_vector[indices_to_keep,]#recreate a spatvector from the desired individuals
+ new_inverse_weights<-inverse_weights[indices_to_keep]
+ saveRDS(year, "saved_data/biais_decrease/year1.RDS")
+ 
+ biais_weights<- terra::extract(biais_raster[[1]], year, xy= TRUE)[, 2]
+ biais_year<-sample(year, size = sample_size, prob = biais_weights, replace = TRUE)
+ unique_biais_year <- terra::unique(biais_year)
+ saveRDS(unique_biais_year, paste("saved_data/biais_decrease/biais_year1.RDS", sep=""))#save each year in a file
+ 
+ 
+ num_to_delete <- (max_reduce/(repetition-1))/100*sample_size
+ 
+ par(mfg = c(1, 1))
+ plot(swiss_shape$geom) #i plot the shape of switzerland
+ par(mfg = c(1, 2))
+ plot(swiss_shape$geom)
+ 
+ start_color <- "#1c74c1" # First color
+ end_color <- "#fff064"   # Last color
+ repetition <- repetition 
+ col <- colorRampPalette(c(start_color, end_color))(repetition)
+ par(mfg = c(1, 1))
+ points(year, col= col[1], pch= 20, cex =0.5)
+ par(mfg = c(1, 2))
+ points(unique_biais_year, col= col[1], pch= 20, cex =0.5)#make points on the map
+ 
+ for(i in 1:(repetition - 1)){
+  indices_to_delete<-sample(nrow(year), size = num_to_delete, 
+                            prob = new_inverse_weights, replace = FALSE)# sample the individuals with weights
+  year<-year[-indices_to_delete,]#recreate a spatvector from the desired individuals
+  new_inverse_weights<-new_inverse_weights[-indices_to_delete]
+  par(mfg = c(1, 1))
+  points(year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(year, paste("saved_data/biais_decrea/year",i+1,".RDS", sep=""))#save each year in a file
+  
+  biais_weights<- terra::extract(biais_raster[[i+1]], year, xy= TRUE)[, 2]
+  biais_year<-sample(year, size = sample_size-i*num_to_delete, prob = biais_weights, replace = TRUE)
+  unique_biais_year <- terra::unique(biais_year)
+  par(mfg = c(1, 2))
+  points(unique_biais_year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(unique_biais_year, paste("saved_data/decrease_sample/biais_year",i+1,".RDS", sep=""))#save each year in a file
+ }
+ return(invisible(year))
+}
+
+#### table of 5km square for popu and observations
+decrease_table<- function(raster5x5 = my_biais$obs_Origin_1994, file.path = "saved_data/decrease_sample" ){
+ all_the_files<-list.files(path = file.path,
+                                       pattern = NULL,
+                                       full.names = TRUE)
+ data <- matrix(NA, nrow = 2, ncol = length(all_the_files)/2)
+ colnames(data) <- paste0("TimeStep", 1:6)  # Optional: Name the columns
+ rownames(data) <- c("Biais", "Population")  # Optional: Name the rows
+ data <- as.data.frame(data)
+ for (i in 1:(length(all_the_files)/2)){
+  biais_year<-readRDS(all_the_files[i])
+  year<-readRDS(all_the_files[i+length(all_the_files)/2])
+  
+  biais_cell_ids <- cellFromXY(raster5x5, crds(biais_year))
+  cell_ids <- cellFromXY(raster5x5, crds(year)) 
+  
+  # Count the number of observations per cell
+  counts_cell <- length(table(cell_ids))
+  counts_biais <- length(table(biais_cell_ids))
+  
+  data[1, i] <- counts_biais
+  data[2, i] <- counts_cell
+ }
+ return(data)
+}
+
+# Create aplot from the dataframe created in decrease table
+plot(c(1:length(stable_table[1,])), stable_table[1,], type = "o", col = "red", 
+     xlab = "TimeStep", ylab = "Value", 
+     xlim = c(1, length(stable_table[1,])), ylim = c(0,700), 
+     main = "Biais and Population over Time")
+
+# Add the second line (Population)
+lines(c(1:length(stable_table[1,])), stable_table[2,], type = "o", col = "blue")
+
+# Add a legend
+legend("topright", legend = c("Biais", "Population"), 
+       col = c("red", "blue"), lty = 1, pch = 1)
+
+
+
+
+
+
+#stable_popu_table <- matrix(NA, nrow = 2, ncol = 6)
+#stable_popu_table[1, ] <- c(2000,2000,2000,2000,2000,2000)
+#stable_popu_table[2, ] <- c(1079,1118,1131,1156,1159,1166)
+#colnames(stable_popu_table) <- paste0("TimeStep", 1:6)  # Optional: Name the columns
+#rownames(stable_popu_table) <- c("Biais", "Population")  # Optional: Name the rows
+#stable_popu_table <- as.data.frame(stable_popu_table)
+
+#### put back in a 5km raster
+# Extract cell IDs for each observation
+biais_cell_ids <- cellFromXY(my_biais$obs_Origin_1994, crds(biais_year1))
+cell_ids <- cellFromXY(my_biais$obs_Origin_1994, crds(year1)) 
+#obs_Origin n'a pas besoin d'etre changer d'une iteration à l'autre
+
+# Count the number of observations per cell
+counts_cell <- table(cell_ids)
+counts_biais <- table(biais_cell_ids)
+#ICI on sait deja la taille
+
+# Create an empty raster with the same structure as your original raster
+counts_raster <- my_biais$obs_Origin_1994
+counts_raster_biais <- my_biais$obs_Origin_1994
+values(counts_raster) <-ifelse(is.na(values(counts_raster)), NA, 0)  # Initialize all cells with 0
+values(counts_raster_biais) <- ifelse(is.na(values(counts_raster)), NA, 0) # Initialize all cells with 0
+
+# Assign counts to the appropriate cells
+values(counts_raster)[as.numeric(names(counts_cell))] <- counts_cell
+values(counts_raster_biais)[as.numeric(names(counts_biais))] <- counts_biais
+
+# Plot the raster of counts
+plot(counts_raster, main = "Observation Counts per 5km Pixel")
+plot(counts_raster_biais, main = "Observation Counts per 5km Pixel")
+
+
+#################################
+#compare the two rasters
+#################################
+# Ensure they have the same extent and resolution
+if (!compareGeom(counts_raster, counts_raster_biais)) {
+ stop("The rasters do not have the same extent and resolution.")
+}
+
+# Apply the logic using a custom function lapp if 2 layers if more use app
+# Combine the rasters into a multi-layer SpatRaster and apply the logic
+output_raster_3 <- app(c(counts_raster, counts_raster_biais), fun = function(values) {
+ x <- values[1]  # First raster value
+ y <- values[2]  # Second raster value
+ 
+ # popu = 1 absence =0
+ if (is.na(x)== T & is.na(y)== T) return(NA)
+ if (x == 0 & y == 0) return(0)
+ if (x != 0 & y != 0) return(1)
+ #return(0.5)
+ return(1)
+})
+
+output_raster_2 <- app(c(counts_raster, counts_raster_biais), fun = function(values) {
+ x <- values[1]  # First raster value
+ y <- values[2]  # Second raster value
+ 
+ # observations =1 absence/populations = 0
+ if (is.na(x)== T & is.na(y)== T) return(NA)
+ if (x == 0 & y == 0) return(0)
+ if (x != 0 & y != 0) return(0)
+ return(1)
+})
+
+##print the plot
+
+# Plot the result
+plot(output_raster_3, main = "Virtual Population Raster")
+plot(output_raster_2, main = "Observations Raster")
+
+#print(freq(output_raster_3)[freq(output_raster_3)$value == 1, "count"])
+#print(freq(output_raster_2)[freq(output_raster_2)$value == 1, "count"])
