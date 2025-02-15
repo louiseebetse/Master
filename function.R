@@ -333,14 +333,14 @@ categories <- cut(my.sp$date, breaks = c(as.Date("1900-01-01"), breaks),
 #  Count the number of observations in each category &
 #Convert to a numeric vector
 date_vector <- as.numeric(table(categories))
-#I now have a vector with the number of observations of my plant per 
-#time period
+#I now have a vector with the number of observations of my plant per time period
 #print(date_vector)
 
 my_biais <- mixedsort(list.files(path = "biais",
                                      pattern = NULL,
                                      full.names = TRUE))
 my_biais<- rast(my_biais)
+my_biais<-terra::unwrap(my_biais)
 head(my_biais)
 names(my_biais)<-c("obs_Origin_1994", "obs_1995_2000", "obs_2001_2006", "obs_2007_2012",
                    "obs_2013_2018", "obs_2019_2024",
@@ -349,8 +349,7 @@ names(my_biais)<-c("obs_Origin_1994", "obs_1995_2000", "obs_2001_2006", "obs_200
                    "prop_pot_Origin-1994", "prop_pot_1995-2000", "prop_pot_2001-2006",  
                    "prop_pot_2007-2012", "prop_pot_2013-2018", "prop_pot_2019-2024")
 
-#test_biais2<- my_biais$obs_Origin_1994/ 231
-#test_biais<- log(my_biais$obs_Origin_1994+1)
+
 
 biais_transformed<- my_biais
 for (i in 1:length(names(my_biais))){
