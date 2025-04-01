@@ -1,0 +1,114 @@
+library(virtualspecies)
+library(terra)
+library(geodata)
+library(git2r)
+library(sf)
+library(gtools) # V.3.9.4
+library(data.table)
+library(sp)
+library(biomod2)
+library(MASS)
+library(leaflet)
+
+#set the session to the right place
+setwd("/Users/louise/Desktop/UNIL/Master/Rstudio/Virtual species")
+
+#export the swiss shapefile
+WS_shape <- read_sf("WS/welten_sutter.shp")
+WS_shape <- WS_shape[WS_shape$name != "Indéterminé", ]
+
+################################################################################
+#WS distribution
+################################################################################
+
+#squared distribution
+
+as.WS<- function(popu,ws_df){
+ #### put back in a 5km raster 
+ # Extract cell IDs for each observation
+ df<-ws_df
+ cell_ids_popu <- st_intersects(df$geometry,sf::st_as_sf(popu))
+ #cell_ids_obs <- st_intersects(df$geometry,sf::st_as_sf(obs))
+ #obs_Origin n'a pas besoin d'etre changer d'une iteration à l'autre
+ 
+ # Count the number of observations per polygon
+ point_counts_popu <- sapply(cell_ids_popu, length)
+ #point_counts_obs <- sapply(cell_ids_obs, length)
+ 
+ df$point_counts_popu<-point_counts_popu
+ #df$point_counts_obs<-point_counts_obs
+ 
+ #do the calculation nb points/area
+ #presence_popu<- df$point_counts_popu/df$area
+ #presence_obs <- df$point_counts_obs/df$area
+ 
+ #vector without the zero for the mean
+ #pres_positiv_popu <- presence_popu[presence_popu != 0.00]
+ #pres_positiv_obs <- presence_obs[presence_obs != 0.00]
+ 
+ #measure the mean ratio between presence/area
+ #moy_popu <- mean(as.numeric(pres_positiv_popu))
+ #moy_obs <- mean(as.numeric(pres_positiv_obs))
+ 
+ #df$moy_popu<-3
+ #df$moy_obs<-moy_obs
+
+ 
+ #create new vector with 0 = absence 1 = rare 2 = common
+ #rarity_vect_popu <- ifelse(presence_popu == 0.00, 0, ifelse(presence_popu < moy_popu, 1, 2))
+ rarity_vect_popu <- ifelse(point_counts_popu == 0, 0, ifelse(point_counts_popu < 3, 1, 2))
+ 
+ #rarity_vect_obs <- ifelse(presence_obs == 0.00, 0, ifelse(presence_obs < moy_obs, 1, 2))
+ 
+ #add the vector to the dataframe
+ df$rarity_popu<-rarity_vect_popu
+ #df$rarity_obs<-rarity_vect_obs
+
+ 
+ # Define colors for 3 categories (0, 1, 2)
+ colors <- c("white","#E9D985","#007991")  
+ 
+ # Ensure rarity is numeric and correctly indexed
+ plot(df$geometry, col = colors[as.numeric(df$rarity_popu) + 1], main = "Rarity Categories in Populations", lwd=0.4)
+ # Add a legend
+ legend("topleft",legend = c("Absent", "Rare", "Common"),fill = colors,cex = 0.8)                         
+ 
+ # # Ensure rarity is numeric and correctly indexed
+ # plot(df$geometry, col = colors[as.numeric(df$rarity_obs) + 1], main = "Rarity Categories in Observations", lwd=0.4)
+ # # Add a legend
+ # legend("topleft",legend = c("Absent", "Rare", "Common"),fill = colors,cex = 0.8)                         
+ 
+ return(df)
+ 
+}
+# 
+# species_files<-list.files(path = "saved_data/species", pattern = NULL,full.names = TRUE)
+# for (sp in 1:(length(species_files))){
+#  dir.create(file.path(paste(species_files[sp],"/sq_biais_stable",sep="")), showWarnings = FALSE)
+#  dir.create(file.path(paste(species_files[sp],"/sq_biais_increase",sep="")), showWarnings = FALSE)
+#  dir.create(file.path(paste(species_files[sp],"/sq_biais_decrease",sep="")), showWarnings = FALSE)
+#  repet <- length(list.files(path = paste(species_files[sp],"/biais_increase/", sep="")))%/%2
+#  for (yr in 1:repet){
+#   #stable
+#   popu_stable<- readRDS(paste(species_files[sp],"/biais_stable/year", yr, ".RDS", sep=""))
+#   obs_stable<-readRDS(paste(species_files[sp],"/biais_stable/biais_year", yr, ".RDS", sep=""))
+#   squares<- as.square(popu_stable,obs_stable)
+#   saveRDS(squares[[1]], paste(species_files[sp],"/sq_biais_stable/year",yr,".RDS", sep=""))
+#   saveRDS(squares[[2]], paste(species_files[sp],"/sq_biais_stable/biais_year",yr,".RDS", sep=""))
+#   
+#   #increase
+#   popu_increase<- readRDS(paste(species_files[sp],"/biais_increase/year", yr, ".RDS", sep=""))
+#   obs_increase<-readRDS(paste(species_files[sp],"/biais_increase/biais_year", yr, ".RDS", sep=""))
+#   squares<- as.square(popu_increase,obs_increase)
+#   saveRDS(squares[[1]], paste(species_files[sp],"/sq_biais_increase/year",yr,".RDS", sep=""))
+#   saveRDS(squares[[2]], paste(species_files[sp],"/sq_biais_increase/biais_year",yr,".RDS", sep=""))
+#   
+#   #decrease
+#   popu_decrease<- readRDS(paste(species_files[sp],"/biais_decrease/year", yr, ".RDS", sep=""))
+#   obs_decrease<-readRDS(paste(species_files[sp],"/biais_decrease/biais_year", yr, ".RDS", sep=""))
+#   squares<- as.square(popu_decrease,obs_decrease)
+#   saveRDS(squares[[1]], paste(species_files[sp],"/sq_biais_decrease/year",yr,".RDS", sep=""))
+#   saveRDS(squares[[2]], paste(species_files[sp],"/sq_biais_decrease/biais_year",yr,".RDS", sep=""))
+#   
+#  }
+# } 
