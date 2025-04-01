@@ -35,8 +35,6 @@ swiss_shape <- st_transform(swiss_shape, crs = 2056)
 #load("SPImaster/sp/1008910")
 # Initialize a list to store the data
 data_list <- list()
-
-
 # Loop through each file
 for (file in list.files(path = "SPImaster/sp", full.names = TRUE)) {
  # Read the file
@@ -127,6 +125,7 @@ biais_increase_sample<- function(repetition, sample_size,sample_vector,proba_ras
  saveRDS(unique_biais_year, paste(path, "/biais_year1.RDS", sep=""))
  
  num_to_add <- (max_increase/(repetition-1))/100*sample_size
+ if (num_to_add <1) {num_to_add<-1} #add at least one popu
  
  par(mfg = c(1, 1))
  plot(swiss_shape$geom) #i plot the shape of switzerland
@@ -178,7 +177,7 @@ biais_decrease_sample<- function(repetition, sample_size,sample_vector,proba_ras
  unique_biais_year <- terra::unique(biais_year)
  saveRDS(unique_biais_year, paste(path, "/biais_year1.RDS", sep=""))
  num_to_delete <- (max_reduce/(repetition-1))/100*sample_size
- if (num_to_delete <1) {num_to_delete<-1}
+ if (num_to_delete <1) {num_to_delete<-1} #delete at least one population
  
  par(mfg = c(1, 1))
  plot(swiss_shape$geom) #i plot the shape of switzerland
@@ -494,3 +493,152 @@ for (sp in 1:(length(species_files))){
   
  }
 } 
+
+
+
+#### table of 5km square for popu and observations
+trends<- c("biais_stable", "biais_increase", "biais_decrease" )
+#acess the data saved and create table of popu +obs
+table_maker<- function(raster5x5 = my_biais$obs_Origin_1994, file.path = "saved_data/random_species/random_sp_2/biais_increase" ){
+ all_the_files<-list.files(path = file.path,
+                           pattern = NULL,
+                           full.names = TRUE)
+ data <- matrix(NA, nrow = 4, ncol = length(all_the_files)/2) #create the matrix
+ colnames(data) <- paste0("TimeStep", 1:6)
+ rownames(data) <- c("Biais_sq", "Population_sq", "Biais", "Population")
+ data <- as.data.frame(data)
+ for (i in 1:(length(all_the_files)/2)){
+  biais_year<-readRDS(all_the_files[i])
+  year<-readRDS(all_the_files[i+length(all_the_files)/2+1])
+  
+  biais_cell_ids <- cellFromXY(raster5x5, crds(biais_year))
+  cell_ids <- cellFromXY(raster5x5, crds(year))
+  
+  # Count the number of observations per cell
+  counts_cell <- length(table(cell_ids))
+  counts_biais <- length(table(biais_cell_ids))
+  
+  data[1, i] <- counts_biais #nb of square of observations
+  data[2, i] <- counts_cell #nb of square of populations
+  data[3, i] <- length(biais_year)# nb of observations
+  data[4, i] <- length(year)# nb of populations
+ }
+ return(data)
+}
+# Create a plot from the dataframe created in decrease table
+#add Observations
+trend_maker<- function(table,species,trend){
+ id <- sub(".*sp_", "", species)
+ plot(c(1:length(decrease_table[1,])), decrease_table[3,], type = "o", col = "turquoise", 
+      xlab = "TimeStep", ylab = "Nb of points", 
+      xlim = c(1, length(decrease_table[1,])), ylim = c(0,2.5*max(decrease_table)), 
+      main = paste(trend, "of species", id,  "over Time"))
+ 
+ # Add the second line (Population)
+ lines(c(1:length(decrease_table[1,])), decrease_table[4,], type = "o", col = "blue")
+ 
+ # Add the sq Observations
+ lines(c(1:length(decrease_table[1,])), decrease_table[1,], type = "o", col = "orange")
+ 
+ # Add the sq Populations
+ lines(c(1:length(decrease_table[1,])), decrease_table[2,], type = "o", col = "red")
+ 
+ 
+ # Add a legend
+ legend("topright", legend = c("Population", "Observations", "Sq populations", "Sq observations"), 
+        col = c("blue", "turquoise", "red", "orange"), lty = 1, pch = 1, ncol =2)
+ 
+}
+
+comparison_df<-data.frame(name=numeric(0),
+                          t1_popu= numeric(0), t2_popu= numeric(0), t3_popu=numeric(0), t4_popu= numeric(0), t5_popu=numeric(0), t6_popu=numeric(0),
+                          t1_obs= numeric(0), t2_obs= numeric(0), t3_obs=numeric(0), t4_obs= numeric(0), t5_obs=numeric(0), t6_obs=numeric(0), 
+                          var_popu= numeric(0), var_obs=numeric(0),
+                          trend=numeric(0), 
+                          sq_trend_popu=numeric(0),diff_popu1=numeric(0),abs_diff_popu=numeric(0),
+                          sq_trend_obs= numeric(0),diff_obs1=numeric(0), abs_diff_obs=numeric(0))
+
+
+#loop through the species files to create the table and the graph to all species with their trend
+for (sp in 1:(length(species_files))){
+ dir.create(file.path(paste(species_files[sp],"/table_trend", sep="")), showWarnings = FALSE)
+ id <- sub(".*sp_", "", species_files[sp])
+ #dir.create(file.path(paste("saved_data/species/sp_1008880/table_trend", sep="")), showWarnings = FALSE)
+ pdf(paste(species_files[sp],"/table_trend/graph_trend_", id,".pdf",sep=""), width = 6.4, height = 7.26)
+ par(mfrow = c(3, 1))
+ for (tr in 1:(length(trends))){
+  decrease_table<-table_maker(file.path = paste(species_files[sp],"/", trends[tr],sep=""))
+  #print(trends[tr])
+  #print(tr)
+  #print(decrease_table)
+  par(mfg = c(tr, 1))
+  trend_maker(decrease_table,species_files[sp],trends[tr])
+  #add the comparison valuesto the data frame
+  t1_popu= round(decrease_table[2,1]/decrease_table[4,1],4)
+  t2_popu=round(decrease_table[2,2]/decrease_table[4,2],4)
+  t3_popu=round(decrease_table[2,3]/decrease_table[4,3],4)
+  t4_popu=round(decrease_table[2,4]/decrease_table[4,4],4)
+  t5_popu=round(decrease_table[2,5]/decrease_table[4,5],4)
+  t6_popu=round(decrease_table[2,6]/decrease_table[4,6],4)
+  sq_diff_popu= round((decrease_table[2,6]-decrease_table[2,1])/decrease_table[2,1],3)
+  diff_popu1= round((decrease_table[4,6]-decrease_table[4,1])/decrease_table[4,1],3)
+  diff_popu2= round((sq_diff_popu)/(diff_popu1),3)
+  diff_popu2[is.nan(diff_popu2)] <- 0 
+  var_popu= round(var(x=c(t1_popu, t2_popu, t3_popu, t4_popu, t5_popu,t6_popu)),5)
+  t1_obs= round(decrease_table[1,1]/decrease_table[3,1],4)
+  t2_obs=round(decrease_table[1,2]/decrease_table[3,2],4)
+  t3_obs=round(decrease_table[1,3]/decrease_table[3,3],4)
+  t4_obs=round(decrease_table[1,4]/decrease_table[3,4],4)
+  t5_obs=round(decrease_table[1,5]/decrease_table[3,5],4)
+  t6_obs=round(decrease_table[1,6]/decrease_table[3,6],4)
+  sq_diff_obs=round((decrease_table[1,6]-decrease_table[1,1])/decrease_table[1,1],3)
+  diff_obs1= round((decrease_table[3,6]-decrease_table[3,1])/decrease_table[3,1],3)
+  diff_obs2= round((sq_diff_obs)/(diff_obs1),3)
+  diff_obs2[is.nan(diff_obs2)] <- 0
+  var_obs= round(var(x=c(t1_obs, t2_obs, t3_obs, t4_obs, t5_obs, t6_obs)),5)
+  comparison_df[nrow(comparison_df)+1, ] <- c(id,t1_popu,t2_popu,t3_popu,t4_popu,t5_popu,t6_popu,t1_obs,t2_obs,t3_obs,t4_obs,t5_obs,t6_obs,var_popu,var_obs, trends[tr],sq_diff_popu,diff_popu1,diff_popu2,sq_diff_obs,diff_obs1, diff_obs2)
+  saveRDS(decrease_table, paste(species_files[sp],"/table_trend/",trends[tr],".RDS",sep=""))
+ }
+ dev.off() 
+}
+print(comparison_df)
+
+
+# Violin plot
+violin<-vioplot(comparison_df$abs_diff_popu, comparison_df$abs_diff_obs, names = c("abs_diff_popu", "abs_diff_obs"), col = c("lightblue", "lightgreen"), ylim=c(0,4))
+title("Violin Plot of the difference in populations and in observations",  )
+
+# Extract values based on trend type
+abs_diff_increase <- as.numeric(comparison_df$abs_diff_popu[comparison_df$trend == "biais_increase"])
+abs_diff_decrease <- as.numeric(comparison_df$abs_diff_popu[comparison_df$trend == "biais_decrease"])
+abs_diff_stable <- as.numeric(comparison_df$abs_diff_popu[comparison_df$trend == "biais_stable"])
+
+abs_obs_increase <- as.numeric(comparison_df$abs_diff_obs[comparison_df$trend == "biais_increase"])
+abs_obs_decrease <- as.numeric(comparison_df$abs_diff_obs[comparison_df$trend == "biais_decrease"])
+abs_obs_stable <- as.numeric(comparison_df$abs_diff_obs[comparison_df$trend == "biais_stable"])
+
+
+# Create violin plot
+vioplot(abs_diff_increase, abs_diff_decrease, abs_diff_stable,
+        names = c("Increase", "Decrease", "Stable"), 
+        col = c("skyblue", "orange", "yellow"), 
+        ylim = c(0, 1.5))
+
+vioplot(abs_diff_increase, abs_diff_decrease, abs_diff_stable,
+        abs_obs_increase, abs_obs_decrease, abs_obs_stable, 
+        names = c("increase", "decrease", "stable","increase", "decrease", "stable"), 
+        col = c("lightblue","lightblue","lightblue", "orange","orange","orange"),
+        ylim = c(0, 1.5)) 
+legend("topleft",legend = c("Populations", "Observations"),fill = c("lightblue", "orange"),cex = 0.8)   
+
+
+
+#boxplot
+boxplot<-boxplot(comparison_df$abs_diff_popu, comparison_df$abs_diff_obs, names = c("abs_diff_popu", "abs_diff_obs"), col = c("lightblue", "lightgreen"), 
+                 main = "Boxplot of the absolute difference in the trends between populations and observations", ylab = "Values", outline=FALSE)
+saveRDS(comparison_df, "saved_data/trend_graph.RDS")
+
+boxplot(abs_diff_increase, abs_diff_decrease, abs_diff_stable, names = c("increase", "decrease", "stable"), col = c("lightblue", "orange", "yellow")) 
+
+boxplot(abs_diff_increase, abs_diff_decrease, abs_diff_stable,abs_obs_increase, abs_obs_decrease, abs_obs_stable, names = c("increase", "decrease", "stable","increase", "decrease", "stable"), col = c("lightblue","lightblue","lightblue", "orange","orange","orange"),outline=FALSE) 
+legend("topleft",legend = c("Populations", "Observations"),fill = c("lightblue", "orange"),cex = 0.8)   
