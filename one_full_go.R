@@ -20,7 +20,7 @@ my_variables <- mixedsort(list.files(path = "variables",
 my_variables<- rast(my_variables)
 #cat(crs(my_variables))
 names(my_variables) = c("ai","bio4", "bio6", "bio15","gdd3", "ph", "pop2000", "pop5000", "rad", "dem", "slope", "canopy")
-my_variables$rad <- project(my_variables$rad, "EPSG:2056")
+#my_variables$rad <- project(my_variables$rad, "EPSG:2056")
 my_variables$dem<-terrain(my_variables$dem, v= "TPI")
 my_variables<- subset(my_variables, c("ai","bio4", "bio6", "bio15","gdd3", "ph", "dem", "slope", "canopy")) #dem, slope canopy
 my_variables<- aggregate(my_variables, fact= 4)#aggregate to have a 100m resolution
@@ -45,7 +45,7 @@ for (file in list.files(path = "SPImaster/sp", full.names = TRUE)) {
  data_list[[file_name]] <- data
 }
 
-pt_list<- data_list[c(2,17)]
+pt_list<- data_list[c(2)]
 #name<- names(pt_list)
 name<- names(data_list)
 
@@ -60,12 +60,14 @@ my_biais <- mixedsort(list.files(path = "biais",
 my_biais<- rast(my_biais)
 my_biais<-terra::unwrap(my_biais)
 #head(my_biais)
-names(my_biais)<-c("obs_Origin_1994", "obs_1995_2000", "obs_2001_2006", "obs_2007_2012",
-                   "obs_2013_2018", "obs_2019_2024",
-                   "Nobsvs_Origin_1994", "Nobsvs_1995_2000", "Nobsvs_2001_2006", "Nobsvs_2007_2012",
-                   "Nobsvs_2013_2018", "Nobsvs_2019_2024",
-                   "prop_pot_Origin-1994", "prop_pot_1995-2000", "prop_pot_2001-2006",  
-                   "prop_pot_2007-2012", "prop_pot_2013-2018", "prop_pot_2019-2024")
+names(my_biais)<-c("obs_Origin_1946", "obs_1947_1952", "obs_1953_1958", "obs_1959_1964", "obs_1965_1970", 
+                   "obs_1971_1976","obs_1977_1982", "obs_1983_1988","obs_1989_1994", "obs_1995_2000", 
+                   "obs_2001_2006", "obs_2007_2012","obs_2013_2018", "obs_2019_2024",
+                   "Nobsv_Origin_1946", "Nobsv_1947_1952", "Nobsv_1953_1958", "Nobsv_1959_1964", "Nobsv_1965_1970", 
+                   "Nobsv_1971_1976","Nobsv_1977_1982", "Nobsv_1983_1988","Nobsv_1989_1994", "Nobsv_1995_2000", 
+                   "Nobsv_2001_2006", "Nobsv_2007_2012","Nobsv_2013_2018", "Nobsv_2019_2024",
+                   "prop_pot_1977_1982", "prop_pot_1947_1952","prop_pot_1953_1958", "prop_pot_1959_1964", 
+                   "prop_pot_1965_1970", "prop_pot_1971_1976")
 
 
 #apply the log scale to my biais raster
@@ -78,7 +80,7 @@ for (i in 1:length(names(my_biais))){
 
 
 #functions to increase, decrease + stady:
-biais_stady_sample<- function(repetition, sample_size, sample_vector,proba_raster, biais_raster,path){
+biais_stady_sample<- function(repetition, sample_size, sample_vector,proba_raster, biais_raster,path, obs_by_year){
  par(mfrow = c(1, 2))
  weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
  plot(swiss_shape$geom) #i plot the shape of switzerland
@@ -98,8 +100,14 @@ biais_stady_sample<- function(repetition, sample_size, sample_vector,proba_raste
   
   
   biais_weights<- terra::extract(biais_raster[[i]], year, xy= TRUE)[, 2]
-  biais_year<-sample(year, size = date_vector[i], prob = biais_weights, replace = TRUE)
-  unique_biais_year <- terra::unique(biais_year)
+  
+  if (obs_by_year[i]==0){ #add a condition if there are 0 observations this year
+   unique_biais_year<-vect() #there will be 0 observation this year
+  }
+  else{
+   biais_year<-sample(year, size = obs_by_year[i], prob = biais_weights, replace = TRUE)
+   unique_biais_year <- terra::unique(biais_year)
+  }
   par(mfg = c(1, 2))
   points(unique_biais_year, col= col[i], pch= 20, cex =0.5)#make points on the map
   saveRDS(unique_biais_year, paste(path, "/biais_year",i,".RDS", sep=""))#save each year in a file
@@ -109,18 +117,45 @@ biais_stady_sample<- function(repetition, sample_size, sample_vector,proba_raste
  return(invisible(year))
 }
 biais_increase_sample<- function(repetition, sample_size,sample_vector,proba_raster, max_increase,biais_raster,path,obs_by_year){
- #set.seed(42)
+ # #set.seed(42)
+ # repetition= 14
+ # sample_size= 100
+ # sample_vector= sample2
+ # proba_raster= prob_raster_quantile
+ # max_increase=50
+ # biais_raster= biais_transformed
+ # path= path_1
+ # obs_by_year= date_vector
+ # 
+ #  
+ 
  par(mfrow = c(1, 2))
- weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ start_weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ starting_points<- sample(nrow(sample_vector), size = 3, #create the first 3 points from where the popu will spread
+                          prob = start_weights, replace = FALSE)
+ starting_points<-sample_vector[starting_points,]
+ radius_rast<-ifel(is.na(proba_raster), NA, 0)# create empty raster with same resolution #fill it with 0 except where there are NAs
+ dist_raster <- distance(radius_rast, starting_points)  # Compute distance raster
+ d50 <- 8000  # Distance where probability is 0.5
+ k <- -0.001  # Controls steepness of the decay
+ 
+ dist_raster <-(1-( 1 / (1 + exp(k * (values(dist_raster) - d50))))) #0.5 in a 5km radius of the point then decay
+ dist_raster <- (dist_raster - min(dist_raster)) / (max(dist_raster) - min(dist_raster)) * 0.3
+ values(radius_rast) <- dist_raster  # Assign computed probabilities
+ radius_rast <- mask(radius_rast, proba_raster) #put the NA to keep the shape
+ par(mfg = c(1, 1))
+ #plot(radius_rast)
+ 
+ weights <- terra::extract(radius_rast, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
  indices_to_keep<-sample(nrow(sample_vector), size = sample_size, 
                          prob = weights, replace = FALSE)
  year<-sample_vector[indices_to_keep,]#recreate a spatvector from the desired individuals
- new_weights<-weights
- new_weights[indices_to_keep]<-0
+ #new_weights<-weights
+ #new_weights[indices_to_keep]<-0
  saveRDS(year, paste(path, "/year1.RDS", sep="")) #save each year in a file
  
  biais_weights<- terra::extract(biais_raster[[1]], year, xy= TRUE)[, 2]
- biais_year<-sample(year, size = date_vector[1], prob = biais_weights, replace = TRUE)
+ biais_year<-sample(year, size = obs_by_year[1], prob = biais_weights, replace = TRUE)
  unique_biais_year <- terra::unique(biais_year)
  saveRDS(unique_biais_year, paste(path, "/biais_year1.RDS", sep=""))
  
@@ -142,18 +177,39 @@ biais_increase_sample<- function(repetition, sample_size,sample_vector,proba_ras
  points(unique_biais_year, col= col[1], pch= 20, cex =0.5)#make points on the map
  
  for(i in 1:(repetition - 1)){
+  
+  radius_rast<-ifel(is.na(proba_raster), NA, 0)# create empty raster with same resolution #fill it with 0 except where there are NAs
+  dist_raster <- distance(radius_rast, starting_points)  # Compute distance raster
+  d50 <- d50+12000  # Distance where probability is 0.5
+  k <- -0.0001  # Controls steepness of the decay
+  
+  dist_raster <-(1-( 1 / (1 + exp(k * (values(dist_raster) - d50))))) #0.5 in a 5km radius of the point then decay
+  dist_raster <- (dist_raster - min(dist_raster)) / (max(dist_raster) - min(dist_raster)) * 0.3
+  values(radius_rast) <- dist_raster  # Assign computed probabilities
+  
+  # Assign computed probabilities
+  radius_rast <- mask(radius_rast, proba_raster) #put the NA to keep the shape
+  par(mfg = c(1, 1))
+  #plot(radius_rast)
+  
+  new_weights <- terra::extract(radius_rast, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
   indices_to_add<-sample(nrow(sample_vector), size = num_to_add, 
                          prob = new_weights, replace = FALSE)# sample the individuals with weights
   year<-rbind(year,sample_vector[indices_to_add,])#recreate a spatvector from the desired individuals
-  new_weights[indices_to_add]<-0
+  #new_weights[indices_to_add]<-0
   par(mfg = c(1, 1))
   points(year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
   saveRDS(year, paste(path, "/year",i+1,".RDS", sep=""))#save each year in a file
   
   biais_weights<- terra::extract(biais_raster[[i+1]], year, xy= TRUE)[, 2]
   #biais_year<-sample(year, size = sample_size+i*num_to_add, prob = biais_weights, replace = TRUE)
-  biais_year<-sample(year, size = date_vector[i+1], prob = biais_weights, replace = TRUE)
-  unique_biais_year <- terra::unique(biais_year)
+  if (obs_by_year[i+1]==0){
+   unique_biais_year<-vect()
+  }
+  else{
+   biais_year<-sample(year, size = obs_by_year[i+1], prob = biais_weights, replace = TRUE)
+   unique_biais_year <- terra::unique(biais_year)
+  }
   par(mfg = c(1, 2))
   points(unique_biais_year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
   saveRDS(unique_biais_year, paste(path, "/biais_year",i+1,".RDS", sep=""))#save each year in a file
@@ -173,7 +229,7 @@ biais_decrease_sample<- function(repetition, sample_size,sample_vector,proba_ras
  saveRDS(year, paste(path, "/year1.RDS", sep=""))
  
  biais_weights<- terra::extract(biais_raster[[1]], year, xy= TRUE)[, 2]
- biais_year<-sample(year, size = date_vector[1], prob = biais_weights, replace = TRUE)
+ biais_year<-sample(year, size = obs_by_year[1], prob = biais_weights, replace = TRUE)
  unique_biais_year <- terra::unique(biais_year)
  saveRDS(unique_biais_year, paste(path, "/biais_year1.RDS", sep=""))
  num_to_delete <- (max_reduce/(repetition-1))/100*sample_size
@@ -203,8 +259,13 @@ biais_decrease_sample<- function(repetition, sample_size,sample_vector,proba_ras
   saveRDS(year, paste(path, "/year",i+1,".RDS", sep=""))#save each year in a file
   biais_weights<- terra::extract(biais_raster[[i+1]], year, xy= TRUE)[, 2]
   #biais_year<-sample(year, size = sample_size-i*num_to_delete, prob = biais_weights, replace = TRUE)
-  biais_year<-sample(year, size = date_vector[1+i], prob = biais_weights, replace = TRUE)
-  unique_biais_year <- terra::unique(biais_year)
+  if (obs_by_year[i+1]==0){
+   unique_biais_year<-vect()
+  }
+  if (obs_by_year[i+1]!=0){
+   biais_year<-sample(year, size = obs_by_year[1+i], prob = biais_weights, replace = TRUE)
+   unique_biais_year <- terra::unique(biais_year)
+  }
   par(mfg = c(1, 2))
   points(unique_biais_year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
   saveRDS(unique_biais_year, paste(path, "/biais_year",i+1,".RDS", sep=""))#save each year in a file
@@ -212,9 +273,67 @@ biais_decrease_sample<- function(repetition, sample_size,sample_vector,proba_ras
  }
  return(invisible(year)) 
 }
+old_biais_increase_sample<- function(repetition, sample_size,sample_vector,proba_raster, max_increase,biais_raster,path,obs_by_year){
+ #set.seed(42)
+ par(mfrow = c(1, 2))
+ weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ indices_to_keep<-sample(nrow(sample_vector), size = sample_size, 
+                         prob = weights, replace = FALSE)
+ year<-sample_vector[indices_to_keep,]#recreate a spatvector from the desired individuals
+ new_weights<-weights
+ new_weights[indices_to_keep]<-0
+ saveRDS(year, paste(path, "/year1.RDS", sep="")) #save each year in a file
+ 
+ biais_weights<- terra::extract(biais_raster[[1]], year, xy= TRUE)[, 2]
+ biais_year<-sample(year, size = obs_by_year[1], prob = biais_weights, replace = TRUE)
+ unique_biais_year <- terra::unique(biais_year)
+ saveRDS(unique_biais_year, paste(path, "/biais_year1.RDS", sep=""))
+ 
+ num_to_add <- (max_increase/(repetition-1))/100*sample_size
+ if (num_to_add <1) {num_to_add<-1} #add at least one popu
+ 
+ par(mfg = c(1, 1))
+ plot(swiss_shape$geom) #i plot the shape of switzerland
+ par(mfg = c(1, 2))
+ plot(swiss_shape$geom)
+ 
+ start_color <- "#1c74c1" # First color
+ end_color <- "#fff064"   # Last color
+ repetition <- repetition 
+ col <- colorRampPalette(c(start_color, end_color))(repetition)
+ par(mfg = c(1, 1))
+ points(year, col= col[1], pch= 20, cex =0.5)
+ par(mfg = c(1, 2))
+ points(unique_biais_year, col= col[1], pch= 20, cex =0.5)#make points on the map
+ 
+ for(i in 1:(repetition - 1)){
+  indices_to_add<-sample(nrow(sample_vector), size = num_to_add, 
+                         prob = new_weights, replace = FALSE)# sample the individuals with weights
+  year<-rbind(year,sample_vector[indices_to_add,])#recreate a spatvector from the desired individuals
+  new_weights[indices_to_add]<-0
+  par(mfg = c(1, 1))
+  points(year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(year, paste(path, "/year",i+1,".RDS", sep=""))#save each year in a file
+  
+  
+  biais_weights<- terra::extract(biais_raster[[i+1]], year, xy= TRUE)[, 2]
+  if (obs_by_year[i+1]==0){
+   unique_biais_year<-vect()
+  }
+  else{
+   biais_year<-sample(year, size = obs_by_year[i+1], prob = biais_weights, replace = TRUE)
+   unique_biais_year <- terra::unique(biais_year)
+  }
+  par(mfg = c(1, 2))
+  points(unique_biais_year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(unique_biais_year, paste(path, "/biais_year",i+1,".RDS", sep=""))#save each year in a file
+ }
+ return(invisible(year))
+}
 
 #remove useless variables
 rm(data,my.sp,file_name,file,dwld.date)
+
 
 my_distribution<- function(list_presences){
  #list_distribution<- list()
@@ -264,7 +383,7 @@ my_distribution<- function(list_presences){
   species<- as.data.frame(species) #come back to a data frame
   coord<- species[,c("x", "y")]
   size_popus[sp]<-as.numeric(length(coord$x))
-  save(coord,file = paste("saved_data/species_1008910.RData"))
+  #save(coord,file = paste("saved_data/species_1008910.RData"))
   
   #create a dataframe with presences and pseudo absences
   bg_rand <- terra::spatSample(my_variables$dem, 10000, "random", na.rm=T, as.points=TRUE)
@@ -370,23 +489,25 @@ my_distribution<- function(list_presences){
 #load the species 
 #load(paste("SPImaster/sp/",name[i], sep=""))
 
-# Convert the "date" column to Date format if it's not already
- list_presences[[sp]]$date <- as.Date(list_presences[[sp]]$date)
-# Define the date breaks
- breaks <- as.Date(c("1994-12-31", "2000-12-31", "2006-12-31", 
-                    "2012-12-31", "2018-12-31", "2024-12-31"))
-# Use cut() to classify the dates into groups
- categories <- cut(list_presences[[sp]]$date, breaks = c(as.Date("1900-01-01"), breaks), 
-                  labels = c("Before 1994", "1995-2000", "2001-2006", 
-                             "2007-2012", "2013-2018", "2019-2024"), right = TRUE)
-
-# Count the number of observations in each category & Convert to a numeric vector
- date_vector <- as.numeric(table(categories))
+# # Convert the "date" column to Date format if it's not already
+#  list_presences[[sp]]$date <- as.Date(list_presences[[sp]]$date)
+# # Define the date breaks
+#  breaks <- as.Date(c("1946-12-31","1952-12-31","1958-12-31","1964-12-31","1970-12-31",
+#                      "1976-12-31","1982-12-31","1988-12-31","1994-12-31", "2000-12-31", 
+#                      "2006-12-31","2012-12-31", "2018-12-31", "2024-12-31"))
+# # Use cut() to classify the dates into groups
+#  categories <- cut(list_presences[[sp]]$date, breaks = c(as.Date("1900-01-01"), breaks), 
+#                   labels = c("Before 1946", "1947-1952", "1953-1958", "1959-1964", "1965-1970", 
+#                              "1971-1976", "1977-1982","1983-1988", "1989-1994", "1995-2000", "2001-2006", 
+#                              "2007-2012", "2013-2018", "2019-2024"), right = TRUE)
+# 
+# # Count the number of observations in each category & Convert to a numeric vector
+#  date_vector <- as.numeric(table(categories))
+ 
 #I now have a vector with the number of observations of my plant per time period
 #print(date_vector)
  print(paste("the date vector of",name[sp],"is done"))
 
- 
 
  #plot(my_biais[[7]])
  dir.create(file.path(paste("saved_data/species/sp_",name[sp],sep="")), showWarnings = FALSE)
@@ -394,64 +515,71 @@ my_distribution<- function(list_presences){
  #Stady popu
  path_1= paste("saved_data/species/sp_",name[sp],"/biais_stable", sep="")
  dir.create(file.path(path_1), showWarnings = FALSE)
- biais_stady_sample(repetition=6,size_popus[sp],sample2,prob_raster_quantile,biais_transformed,path_1)
+ biais_stady_sample(repetition=14,size_popus[sp],sample2,prob_raster_quantile,biais_transformed,path_1, date_vector)
 
  #increase popu
  path_1= paste("saved_data/species/sp_",name[sp],"/biais_increase", sep="")
  dir.create(file.path(path_1), showWarnings = FALSE)
- biais_increase_sample(6,size_popus[sp],sample2,prob_raster_quantile,50,biais_transformed,path_1, date_vector)
- 
+ biais_increase_sample(14,size_popus[sp],sample2,prob_raster_quantile,80,biais_transformed,path_1, date_vector)
+
  #decrease popu
  path_1= paste("saved_data/species/sp_",name[sp],"/biais_decrease", sep="")
  dir.create(file.path(path_1), showWarnings = FALSE)
- biais_decrease_sample(6,size_popus[sp],sample2,prob_raster_quantile, 50, biais_transformed, path_1, date_vector)
- 
- #low increase popu
- path_1= paste("saved_data/species/sp_",name[sp],"/low_biais_increase", sep="")
- dir.create(file.path(path_1), showWarnings = FALSE)
- biais_increase_sample(6,size_popus[sp],sample2,prob_raster_quantile, 10, biais_transformed,path_1,date_vector)
- 
- #low decrease popu
- path_1= paste("saved_data/species/sp_",name[sp],"/low_biais_decrease", sep="")
- dir.create(file.path(path_1), showWarnings = FALSE)
- biais_decrease_sample(6,size_popus[sp],sample2,prob_raster_quantile, 10, biais_transformed,path_1, date_vector)
- 
+ biais_decrease_sample(14,size_popus[sp],sample2,prob_raster_quantile, 80, biais_transformed, path_1, date_vector)
+
+ # #low increase popu
+ # path_1= paste("saved_data/species/sp_",name[sp],"/low_biais_increase", sep="")
+ # dir.create(file.path(path_1), showWarnings = FALSE)
+ # biais_increase_sample(6,size_popus[sp],sample2,prob_raster_quantile, 10, biais_transformed,path_1,date_vector)
+ # 
+ # #low decrease popu
+ # path_1= paste("saved_data/species/sp_",name[sp],"/low_biais_decrease", sep="")
+ # dir.create(file.path(path_1), showWarnings = FALSE)
+ # biais_decrease_sample(6,size_popus[sp],sample2,prob_raster_quantile, 10, biais_transformed,path_1, date_vector)
+ # 
  print(paste("stable + increase + decrease of", name[sp], "is done"))
 
  saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/biais_stable/prob_raster_quantile.RDS",sep=""))
  saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/biais_increase/prob_raster_quantile.RDS",sep=""))
  saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/biais_decrease/prob_raster_quantile.RDS",sep=""))
- saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/low_biais_increase/prob_raster_quantile.RDS",sep=""))
- saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/low_biais_decrease/prob_raster_quantile.RDS",sep=""))
+ #saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/low_biais_increase/prob_raster_quantile.RDS",sep=""))
+ #saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/low_biais_decrease/prob_raster_quantile.RDS",sep=""))
 
 }
 }
-my_distribution(data_list)
+my_distribution(data_list[16:17])
 #my_distribution(pt_list)
 
 #squared distribution
 
 as.square<- function(popu,obs){
+ popu<- terra::unwrap(popu)
+ obs<- terra::unwrap(obs)
+ if (nrow(biais_year2)==0){
+  counts_raster_biais<-ifel(is.na(my_biais$obs_1947_1952), NA, 0)# create empty raster with same resolution #fill it with 0 except where there are NAs
+ }
+ else{
+  biais_cell_ids <- cellFromXY(my_biais$obs_1947_1952, crds(obs))
+  counts_biais <- table(biais_cell_ids)
+  counts_raster_biais <- my_biais$obs_1947_1952
+  values(counts_raster_biais) <- ifelse(is.na(values(counts_raster_biais)), NA, 0) # Initialize all cells with 0
+  values(counts_raster_biais)[as.numeric(names(counts_biais))] <- counts_biais
+ }
  #### put back in a 5km raster 
  # Extract cell IDs for each observation
- cell_ids <- cellFromXY(my_biais$obs_Origin_1994, crds(popu)) 
- biais_cell_ids <- cellFromXY(my_biais$obs_Origin_1994, crds(obs))
+ cell_ids <- cellFromXY(my_biais$obs_1947_1952, crds(popu)) 
  #obs_Origin n'a pas besoin d'etre changer d'une iteration à l'autre
  
  # Count the number of observations per cell
  counts_cell <- table(cell_ids)
- counts_biais <- table(biais_cell_ids)
  #ICI on sait deja la taille
  
  # Create an empty raster with the same structure as your original raster
- counts_raster <- my_biais$obs_Origin_1994
- counts_raster_biais <- my_biais$obs_Origin_1994
+ counts_raster <- my_biais$obs_1947_1952
  values(counts_raster) <-ifelse(is.na(values(counts_raster)), NA, 0)  # Initialize all cells with 0
- values(counts_raster_biais) <- ifelse(is.na(values(counts_raster)), NA, 0) # Initialize all cells with 0
  
  # Assign counts to the appropriate cells
  values(counts_raster)[as.numeric(names(counts_cell))] <- counts_cell
- values(counts_raster_biais)[as.numeric(names(counts_biais))] <- counts_biais
  
  # Plot the raster of counts
  #plot(counts_raster, main = "Population Counts per 5km Pixel")
@@ -481,10 +609,12 @@ for (sp in 1:(length(species_files))){
   popu_increase<- readRDS(paste(species_files[sp],"/biais_increase/year", yr, ".RDS", sep=""))
   obs_increase<-readRDS(paste(species_files[sp],"/biais_increase/biais_year", yr, ".RDS", sep=""))
   squares<- as.square(popu_increase,obs_increase)
+  #print(paste0(yr, " ",1.5))
   saveRDS(squares[[1]], paste(species_files[sp],"/sq_biais_increase/year",yr,".RDS", sep=""))
   saveRDS(squares[[2]], paste(species_files[sp],"/sq_biais_increase/biais_year",yr,".RDS", sep=""))
   
   #decrease
+  #print(paste0(yr, 3))
   popu_decrease<- readRDS(paste(species_files[sp],"/biais_decrease/year", yr, ".RDS", sep=""))
   obs_decrease<-readRDS(paste(species_files[sp],"/biais_decrease/biais_year", yr, ".RDS", sep=""))
   squares<- as.square(popu_decrease,obs_decrease)
@@ -492,6 +622,7 @@ for (sp in 1:(length(species_files))){
   saveRDS(squares[[2]], paste(species_files[sp],"/sq_biais_decrease/biais_year",yr,".RDS", sep=""))
   
  }
+ print(paste0(species_files[sp], " is aggregated"))
 } 
 
 
@@ -499,24 +630,31 @@ for (sp in 1:(length(species_files))){
 #### table of 5km square for popu and observations
 trends<- c("biais_stable", "biais_increase", "biais_decrease" )
 #acess the data saved and create table of popu +obs
-table_maker<- function(raster5x5 = my_biais$obs_Origin_1994, file.path = "saved_data/random_species/random_sp_2/biais_increase" ){
+#= "saved_data/random_species/random_sp_2/biais_increase"
+table_maker<- function(raster5x5 = my_biais$obs_1947_1952, file.path ){
  all_the_files<-list.files(path = file.path,
                            pattern = NULL,
                            full.names = TRUE)
+ # Extract the number after "year" using a regular expression
+ year_numbers <- as.numeric(gsub(".*year([0-9]+)\\.RDS", "\\1", all_the_files))
+ 
+ # Reorder the files by those extracted numbers
+ all_the_files <- all_the_files[order(year_numbers)]
+ 
  data <- matrix(NA, nrow = 4, ncol = length(all_the_files)/2) #create the matrix
- colnames(data) <- paste0("TimeStep", 1:6)
- rownames(data) <- c("Biais_sq", "Population_sq", "Biais", "Population")
+ colnames(data) <- paste0("TimeStep", 1:14) #put the name of the columns
+ rownames(data) <- c("Biais_sq", "Population_sq", "Biais", "Population") #put names of the lines
  data <- as.data.frame(data)
- for (i in 1:(length(all_the_files)/2)){
-  biais_year<-readRDS(all_the_files[i])
-  year<-readRDS(all_the_files[i+length(all_the_files)/2+1])
+ for (i in 1:(length(all_the_files)/2)){ #loop for the number of year
+  biais_year<-readRDS(all_the_files[i*2-1])#load the observations
+  year<-readRDS(all_the_files[i*2])#load the populations
   
-  biais_cell_ids <- cellFromXY(raster5x5, crds(biais_year))
-  cell_ids <- cellFromXY(raster5x5, crds(year))
+  biais_cell_ids <- cellFromXY(raster5x5, crds(biais_year)) #aggregate to 5km
+  cell_ids <- cellFromXY(raster5x5, crds(year)) #aggregate to 5km
   
   # Count the number of observations per cell
-  counts_cell <- length(table(cell_ids))
-  counts_biais <- length(table(biais_cell_ids))
+  counts_cell <- length(table(cell_ids)) #count the number of cells at 5km
+  counts_biais <- length(table(biais_cell_ids)) #count the number of cells at 5km
   
   data[1, i] <- counts_biais #nb of square of observations
   data[2, i] <- counts_cell #nb of square of populations
@@ -525,47 +663,50 @@ table_maker<- function(raster5x5 = my_biais$obs_Origin_1994, file.path = "saved_
  }
  return(data)
 }
+
 # Create a plot from the dataframe created in decrease table
 #add Observations
 trend_maker<- function(table,species,trend){
+ date<-c(1946, 1952, 1958, 1964, 1970, 1976, 1982, 1988, 1994,2000,2006,2012,2018,2024)
  id <- sub(".*sp_", "", species)
- plot(c(1:length(decrease_table[1,])), decrease_table[3,], type = "o", col = "turquoise", 
-      xlab = "TimeStep", ylab = "Nb of points", 
-      xlim = c(1, length(decrease_table[1,])), ylim = c(0,2.5*max(decrease_table)), 
-      main = paste(trend, "of species", id,  "over Time"))
- 
+ plot(date, decrease_table[3,], type = "o", col = "turquoise", 
+      xlab = "Time", ylab = "Nb of points", 
+      xlim = c(1946,2024), ylim = c(0,1.8*max(decrease_table)), 
+      main = paste(trend, "of species", id,  "over Time"),
+      xaxt = "n")
+ axis(1, at = date, las=2)
  # Add the second line (Population)
- lines(c(1:length(decrease_table[1,])), decrease_table[4,], type = "o", col = "blue")
+ lines(date, decrease_table[4,], type = "o", col = "blue")
  
  # Add the sq Observations
- lines(c(1:length(decrease_table[1,])), decrease_table[1,], type = "o", col = "orange")
+ lines(date, decrease_table[1,], type = "o", col = "orange")
  
  # Add the sq Populations
- lines(c(1:length(decrease_table[1,])), decrease_table[2,], type = "o", col = "red")
- 
+ lines(date, decrease_table[2,], type = "o", col = "red")
  
  # Add a legend
- legend("topright", legend = c("Population", "Observations", "Sq populations", "Sq observations"), 
+ legend("topright", legend = c("100m_Popu", "100m_Obs", "5000m_Popu", "5000m_Obs"), 
         col = c("blue", "turquoise", "red", "orange"), lty = 1, pch = 1, ncol =2)
  
 }
 
 comparison_df<-data.frame(name=numeric(0),
-                          t1_popu= numeric(0), t2_popu= numeric(0), t3_popu=numeric(0), t4_popu= numeric(0), t5_popu=numeric(0), t6_popu=numeric(0),
-                          t1_obs= numeric(0), t2_obs= numeric(0), t3_obs=numeric(0), t4_obs= numeric(0), t5_obs=numeric(0), t6_obs=numeric(0), 
-                          var_popu= numeric(0), var_obs=numeric(0),
+                          t1_popu= numeric(0), t2_popu= numeric(0), t3_popu=numeric(0), t4_popu= numeric(0), t5_popu=numeric(0), t6_popu=numeric(0), t7_popu=numeric(0), t8_popu=numeric(0), t9_popu=numeric(0), t10_popu=numeric(0), t11_popu=numeric(0), t12_popu=numeric(0), t13_popu=numeric(0), t14_popu=numeric(0),
+                          t1_obs= numeric(0), t2_obs= numeric(0), t3_obs=numeric(0), t4_obs= numeric(0), t5_obs=numeric(0), t6_obs=numeric(0), t7_obs=numeric(0), t8_obs=numeric(0), t9_obs=numeric(0), t10_obs=numeric(0), t11_obs=numeric(0), t12_obs=numeric(0), t13_obs=numeric(0), t14_obs=numeric(0),                          var_popu= numeric(0), var_obs=numeric(0),
                           trend=numeric(0), 
                           sq_trend_popu=numeric(0),diff_popu1=numeric(0),abs_diff_popu=numeric(0),
                           sq_trend_obs= numeric(0),diff_obs1=numeric(0), abs_diff_obs=numeric(0))
 
 
 #loop through the species files to create the table and the graph to all species with their trend
+#sp=2
 for (sp in 1:(length(species_files))){
  dir.create(file.path(paste(species_files[sp],"/table_trend", sep="")), showWarnings = FALSE)
  id <- sub(".*sp_", "", species_files[sp])
  #dir.create(file.path(paste("saved_data/species/sp_1008880/table_trend", sep="")), showWarnings = FALSE)
  pdf(paste(species_files[sp],"/table_trend/graph_trend_", id,".pdf",sep=""), width = 6.4, height = 7.26)
  par(mfrow = c(3, 1))
+ 
  for (tr in 1:(length(trends))){
   decrease_table<-table_maker(file.path = paste(species_files[sp],"/", trends[tr],sep=""))
   #print(trends[tr])
@@ -580,23 +721,39 @@ for (sp in 1:(length(species_files))){
   t4_popu=round(decrease_table[2,4]/decrease_table[4,4],4)
   t5_popu=round(decrease_table[2,5]/decrease_table[4,5],4)
   t6_popu=round(decrease_table[2,6]/decrease_table[4,6],4)
-  sq_diff_popu= round((decrease_table[2,6]-decrease_table[2,1])/decrease_table[2,1],3)
-  diff_popu1= round((decrease_table[4,6]-decrease_table[4,1])/decrease_table[4,1],3)
+  t7_popu=round(decrease_table[2,7]/decrease_table[4,7],4)
+  t8_popu=round(decrease_table[2,8]/decrease_table[4,8],4)
+  t9_popu=round(decrease_table[2,9]/decrease_table[4,9],4)
+  t10_popu=round(decrease_table[2,10]/decrease_table[4,10],4)
+  t11_popu=round(decrease_table[2,11]/decrease_table[4,11],4)
+  t12_popu=round(decrease_table[2,12]/decrease_table[4,12],4)
+  t13_popu=round(decrease_table[2,13]/decrease_table[4,13],4)
+  t14_popu=round(decrease_table[2,14]/decrease_table[4,14],4)
+  sq_diff_popu= round((decrease_table[2,14]-decrease_table[2,1])/decrease_table[2,1],3)
+  diff_popu1= round((decrease_table[4,14]-decrease_table[4,1])/decrease_table[4,1],3)
   diff_popu2= round((sq_diff_popu)/(diff_popu1),3)
-  diff_popu2[is.nan(diff_popu2)] <- 0 
-  var_popu= round(var(x=c(t1_popu, t2_popu, t3_popu, t4_popu, t5_popu,t6_popu)),5)
+  diff_popu2[is.nan(diff_popu2)] <- 0
+  var_popu= round(var(x=c(t1_popu, t2_popu, t3_popu, t4_popu, t5_popu,t6_popu,t7_popu, t8_popu, t9_popu, t10_popu,t11_popu, t12_popu, t13_popu,t14_popu )),5)
   t1_obs= round(decrease_table[1,1]/decrease_table[3,1],4)
   t2_obs=round(decrease_table[1,2]/decrease_table[3,2],4)
   t3_obs=round(decrease_table[1,3]/decrease_table[3,3],4)
   t4_obs=round(decrease_table[1,4]/decrease_table[3,4],4)
   t5_obs=round(decrease_table[1,5]/decrease_table[3,5],4)
   t6_obs=round(decrease_table[1,6]/decrease_table[3,6],4)
-  sq_diff_obs=round((decrease_table[1,6]-decrease_table[1,1])/decrease_table[1,1],3)
-  diff_obs1= round((decrease_table[3,6]-decrease_table[3,1])/decrease_table[3,1],3)
+  t7_obs=round(decrease_table[1,7]/decrease_table[3,7],4)
+  t8_obs=round(decrease_table[1,8]/decrease_table[3,8],4)
+  t9_obs=round(decrease_table[1,9]/decrease_table[3,9],4)
+  t10_obs=round(decrease_table[1,10]/decrease_table[3,10],4)
+  t11_obs=round(decrease_table[1,11]/decrease_table[3,11],4)
+  t12_obs=round(decrease_table[1,12]/decrease_table[3,12],4)
+  t13_obs=round(decrease_table[1,13]/decrease_table[3,13],4)
+  t14_obs=round(decrease_table[1,14]/decrease_table[3,14],4)
+  sq_diff_obs=round((decrease_table[1,14]-decrease_table[1,1])/decrease_table[1,1],3)
+  diff_obs1= round((decrease_table[3,14]-decrease_table[3,1])/decrease_table[3,1],3)
   diff_obs2= round((sq_diff_obs)/(diff_obs1),3)
   diff_obs2[is.nan(diff_obs2)] <- 0
-  var_obs= round(var(x=c(t1_obs, t2_obs, t3_obs, t4_obs, t5_obs, t6_obs)),5)
-  comparison_df[nrow(comparison_df)+1, ] <- c(id,t1_popu,t2_popu,t3_popu,t4_popu,t5_popu,t6_popu,t1_obs,t2_obs,t3_obs,t4_obs,t5_obs,t6_obs,var_popu,var_obs, trends[tr],sq_diff_popu,diff_popu1,diff_popu2,sq_diff_obs,diff_obs1, diff_obs2)
+  var_obs= round(var(x=c(t1_obs, t2_obs, t3_obs, t4_obs, t5_obs, t6_obs, t7_obs, t8_obs,t9_obs,t10_obs,t11_obs,t12_obs,t13_obs,t14_obs)),5)
+  comparison_df[nrow(comparison_df)+1, ] <- c(id,t1_popu,t2_popu,t3_popu,t4_popu,t5_popu,t6_popu,t7_popu, t8_popu, t9_popu, t10_popu,t11_popu, t12_popu, t13_popu,t14_popu,t1_obs,t2_obs,t3_obs,t4_obs,t5_obs,t6_obs,t7_obs, t8_obs,t9_obs,t10_obs,t11_obs,t12_obs,t13_obs,t14_obs,var_popu,var_obs, trends[tr],sq_diff_popu,diff_popu1,diff_popu2,sq_diff_obs,diff_obs1, diff_obs2)
   saveRDS(decrease_table, paste(species_files[sp],"/table_trend/",trends[tr],".RDS",sep=""))
  }
  dev.off() 
