@@ -400,55 +400,56 @@ my_distribution<- function(list_presences){
    I(dem^2) + ph + I(ph^2) + ai + I(ai^2) + bio4 + I(bio4^2) + 
    bio15 + I(bio15^2) + gdd3 + I(gdd3^2) + slope + I(slope^2)
   glm1<- glm(glm_formula, data=sp_env, family= "binomial")
-  #sp_prediction<-predict.glm(glm1,newdata= my_variables, type= "response")
-  
-  #create a vector with the names of the variables
-  var.names<-c("bio6", "canopy", "dem", "ph", "ai", "bio4", "bio15", "gdd3","slope")
-  
-  #create thedataframe with the medians
-  medians <- data.frame(t(apply(sp_env[, var.names], 2, median)))
-  
-  
-  # create a dataframe with just the coef (a in ax +b) from the glm
-  coef<-glm1$coefficients
-  
-  #a function that create a dataframe to have the h,b,c and the function for each variable
-  function_creator <- function(median, coef, var_names){
-   funcs <- vector("list", length(var_names))
-   H<-c()
-   B<-c()
-   C<-c()
-   for (i in 1:length(var_names)) {
-    interest_variable = var_names[i]
-    h= as.numeric(coef[1])
-    pro_median<- median[, !names(median) %in% interest_variable]# remove bio6 from the medians
-    pro_coef<-coef[!names(coef) %in% c("(Intercept)", interest_variable, paste0("I(", interest_variable, "^2)"))]# remove intercept and bio6 coef
-    for (j in 1:length(pro_median)){
-     h=as.numeric(h+ pro_coef[j*2-1]*median[j]+ pro_coef[j*2]*median[j]^2)
-    }
-    H<- c(H, h)
-    B=c(B, as.numeric(coef[2*i]))
-    C=c(C, as.numeric(coef[2*i+1]))
-   }
-   df<- data.frame(variable= var_names, h= H, b= B, c=C, stringsAsFactors = FALSE)
-   row.names(df)<-var_names
-   return(df)
-  }
-  df<- function_creator(medians, coef, var.names)
-  
-  my.responses <- formatFunctions(bio6 = c(fun = 'fun1', h=df$h[1],b=df$b[1], c=df$c[1]),
-                                  canopy = c(fun = 'fun1', h=df$h[2],b=df$b[2], c=df$c[2]),
-                                  dem = c(fun = 'fun1', h=df$h[3],b=df$b[3], c=df$c[3]),
-                                  ph = c(fun = 'fun1', h=df$h[4],b=df$b[4], c=df$c[4]),
-                                  ai = c(fun = 'fun1', h=df$h[5],b=df$b[5], c=df$c[5]),
-                                  bio4 = c(fun = 'fun1', h=df$h[6],b=df$b[6], c=df$c[6]),
-                                  bio15 = c(fun = 'fun1', h=df$h[7],b=df$b[7], c=df$c[7]),
-                                  gdd3 = c(fun = 'fun1', h=df$h[8],b=df$b[8], c=df$c[8]),
-                                  slope = c(fun = 'fun1', h=df$h[9],b=df$b[9], c=df$c[9]),)
-  map_probability<- generateSpFromFun(raster.stack = my_variables[[c("bio6", "canopy","dem","ph", "ai", "bio4", "bio15", "gdd3", "slope")]],
-                                      parameters = my.responses, plot = TRUE)
-  
-  saveRDS(map_probability,file = paste("saved_data/suitab_map/suitab_map_",name[sp],".RDS", sep=""))
+  sp_prediction<-predict(my_variables,glm1,fun=predict,type= "response")
+  #plot(sp_prediction)
+  # 
+  # #create a vector with the names of the variables
+  # var.names<-c("bio6", "canopy", "dem", "ph", "ai", "bio4", "bio15", "gdd3","slope")
+  # 
+  # #create thedataframe with the medians
+  # medians <- data.frame(t(apply(sp_env[, var.names], 2, median)))
+  # 
+  # 
+  # # create a dataframe with just the coef (a in ax +b) from the glm
+  # coef<-glm1$coefficients
+  # 
+  # #a function that create a dataframe to have the h,b,c and the function for each variable
+  # function_creator <- function(median, coef, var_names){
+  #  funcs <- vector("list", length(var_names))
+  #  H<-c()
+  #  B<-c()
+  #  C<-c()
+  #  for (i in 1:length(var_names)) {
+  #   interest_variable = var_names[i]
+  #   h= as.numeric(coef[1])
+  #   pro_median<- median[, !names(median) %in% interest_variable]# remove bio6 from the medians
+  #   pro_coef<-coef[!names(coef) %in% c("(Intercept)", interest_variable, paste0("I(", interest_variable, "^2)"))]# remove intercept and bio6 coef
+  #   for (j in 1:length(pro_median)){
+  #    h=as.numeric(h+ pro_coef[j*2-1]*median[j]+ pro_coef[j*2]*median[j]^2)
+  #   }
+  #   H<- c(H, h)
+  #   B=c(B, as.numeric(coef[2*i]))
+  #   C=c(C, as.numeric(coef[2*i+1]))
+  #  }
+  #  df<- data.frame(variable= var_names, h= H, b= B, c=C, stringsAsFactors = FALSE)
+  #  row.names(df)<-var_names
+  #  return(df)
+  # }
+  # df<- function_creator(medians, coef, var.names)
+  # 
+  # my.responses <- formatFunctions(bio6 = c(fun = 'fun1', h=df$h[1],b=df$b[1], c=df$c[1]),
+  #                                 canopy = c(fun = 'fun1', h=df$h[2],b=df$b[2], c=df$c[2]),
+  #                                 dem = c(fun = 'fun1', h=df$h[3],b=df$b[3], c=df$c[3]),
+  #                                 ph = c(fun = 'fun1', h=df$h[4],b=df$b[4], c=df$c[4]),
+  #                                 ai = c(fun = 'fun1', h=df$h[5],b=df$b[5], c=df$c[5]),
+  #                                 bio4 = c(fun = 'fun1', h=df$h[6],b=df$b[6], c=df$c[6]),
+  #                                 bio15 = c(fun = 'fun1', h=df$h[7],b=df$b[7], c=df$c[7]),
+  #                                 gdd3 = c(fun = 'fun1', h=df$h[8],b=df$b[8], c=df$c[8]),
+  #                                 slope = c(fun = 'fun1', h=df$h[9],b=df$b[9], c=df$c[9]),)
+  # map_probability<- generateSpFromFun(raster.stack = my_variables[[c("bio6", "canopy","dem","ph", "ai", "bio4", "bio15", "gdd3", "slope")]],
+  #                                     parameters = my.responses, plot = TRUE)
+  # 
+  saveRDS(sp_prediction,file = paste("saved_data/suitab_map/suitab_map_",name[sp],".RDS", sep=""))
   print(paste("the suitab map of",name[sp],"is done"))
  #}
  #return (size_popus)
