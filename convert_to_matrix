@@ -1,4 +1,16 @@
-#Create the grid
+library(reshape2)
+library(tidyr)
+library(sf)
+library(terra)
+library(readxl)
+library(httr)
+library(mapview)
+library(ggplot2)
+library(plot.matrix)
+library(magick)
+library(data.table)
+library(dplyr)
+library(raster)
 #----------------------------------------------------------------------------------
 # parameters
 res <- 5000
@@ -38,13 +50,14 @@ my_biais <- mixedsort(list.files(path = "biais",
 my_biais<- rast(my_biais)
 my_biais<-terra::unwrap(my_biais)
 #head(my_biais)
-names(my_biais)<-c("obs_Origin_1994", "obs_1995_2000", "obs_2001_2006", "obs_2007_2012",
-                   "obs_2013_2018", "obs_2019_2024",
-                   "Nobsvs_Origin_1994", "Nobsvs_1995_2000", "Nobsvs_2001_2006", "Nobsvs_2007_2012",
-                   "Nobsvs_2013_2018", "Nobsvs_2019_2024",
-                   "prop_pot_Origin-1994", "prop_pot_1995-2000", "prop_pot_2001-2006",  
-                   "prop_pot_2007-2012", "prop_pot_2013-2018", "prop_pot_2019-2024")
-
+names(my_biais)<-c("obs_Origin_1946", "obs_1947_1952", "obs_1953_1958", "obs_1959_1964", "obs_1965_1970", 
+                   "obs_1971_1976","obs_1977_1982", "obs_1983_1988","obs_1989_1994", "obs_1995_2000", 
+                   "obs_2001_2006", "obs_2007_2012","obs_2013_2018", "obs_2019_2024",
+                   "Nobsv_Origin_1946", "Nobsv_1947_1952", "Nobsv_1953_1958", "Nobsv_1959_1964", "Nobsv_1965_1970", 
+                   "Nobsv_1971_1976","Nobsv_1977_1982", "Nobsv_1983_1988","Nobsv_1989_1994", "Nobsv_1995_2000", 
+                   "Nobsv_2001_2006", "Nobsv_2007_2012","Nobsv_2013_2018", "Nobsv_2019_2024",
+                   "prop_pot_1977_1982", "prop_pot_1947_1952","prop_pot_1953_1958", "prop_pot_1959_1964", 
+                   "prop_pot_1965_1970", "prop_pot_1971_1976")
 
 #apply the log scale to my biais raster
 biais_transformed<- my_biais
@@ -53,110 +66,70 @@ for (i in 1:length(names(my_biais))){
 }
 
 #----------------------------------------------------------------------------------
-
-
+list_species<-list.files(path = paste0("saved_data/species/"), pattern = "10", full.names = FALSE)
+pt_list<-list_species[4:17]
+#pt_list<-pt_list[2]
 trends<- c("biais_stable", "biais_increase", "biais_decrease" )
-species_files_incr<-list.files(path = paste0("saved_data/species/sp_1008880/","biais_increase" ), pattern = "biais_",full.names = TRUE)
-species_files_decr<-list.files(path = paste0("saved_data/species/sp_1008880/","biais_decrease" ), pattern = "biais_",full.names = TRUE)
-species_files_stab<-list.files(path = paste0("saved_data/species/sp_1008880/","biais_stable" ), pattern = "biais_",full.names = TRUE)
-species_files<-c(species_files_decr,species_files_incr, species_files_stab)
-prob_raster_quantile <- readRDS("saved_data/species/sp_1008880/biais_decrease/prob_raster_quantile.RDS")
-small_files<- species_files_decr[1:2]
-timescale<-c(1994,2000,2006,2012,2018,2024)
-
-#nb of observations per cell
-
+timescale<-c(1946, 1952, 1958, 1964, 1970, 1976, 1982, 1988, 1994,2000,2006,2012,2018,2024)
+#path= "saved_data/species/sp_1008910/biais_increase/biais_year4.RDS" 
 to_matrix<-function(path){
-id<-gsub(".*/sp_([0-9]+)/.*", "\\1", path) #fix the name
-year<- as.numeric(gsub(".*year([0-9]+)\\.RDS", "\\1", path)) #fix the year
-points<-readRDS(path)  # my observations
-polygons <- ch_sq # Load polygon data
-
-
-points<-sf::st_as_sf(points)
-
-# Perform spatial intersection: Find which points fall within which polygon
-intersections <- sf::st_join(points, polygons)
-
-# Count the number of points per polygon
-point_counts <- raster::aggregate(intersections, by = list(intersections$sq_id), FUN = length)
-
-# Convert the result into a data frame
-result_df <- data.frame(
- sq_id = point_counts$Group.1,
- num_points = point_counts$sq_id  
-)
-#----------------------------------------------------------------------------------
-#suitability 100m in 5km resolution
-
-suitab_map <- prob_raster_quantile
-suitab_df<- data.frame(sq_id=ch_sq$sq_id)
-
-spatvector <- vect(ch_sq)  # Convert 5km poly to spatvector
-mean_extract <- terra::extract(suitab_map, spatvector, fun = mean, na.rm = TRUE)
-suitab_df$suitability <- mean_extract[, 2]
-
-#----------------------------------------------------------------------------------
-#sampling effort
-nb_obs<- biais_transformed[[1:6]]
-obs_extract<- terra::extract(nb_obs[[year]],spatvector)
-suitab_df$sampling_eff <- obs_extract[,2]
-#----------------------------------------------------------------------------------
-
-# Merge nb of observation and suitability
-my_df <- merge(suitab_df, result_df, by = "sq_id", all.x = TRUE)
-
-# Replace NA values in 'value2' with 0
-my_df$num_points[is.na(my_df$num_points)] <- 0
-my_df$year <- timescale[year]
-my_df$species <- id
-
-return(my_df)
-}
-#apply the matrix creation on each time step
-sp_1008880_de<-do.call(rbind, lapply(species_files_stab, to_matrix))
-
-#select just where there is at least one obs
-sp_1008880_obs <- sp_1008880_de[sp_1008880_de$sq_id %in% unique(sp_1008880_de$sq_id[sp_1008880_de$num_points!=0]), ]
-
+ id<-gsub(".*/sp_([0-9]+)/.*", "\\1", path) #fix the name
+ year<- as.numeric(gsub(".*year([0-9]+)\\.RDS", "\\1", path)) #fix the year
+ #print(year)
+ points<-readRDS(path)  # my observations
+ polygons <- ch_sq # Load polygon data
  
-sp_1008880_obs[is.na(sp_1008880_obs)] <- 0
-
-# Step 4: Convert to matrix format
-sp_matrix_dat <- dcast(sp_1008880_obs, sq_id ~ year, value.var = "num_points", fill = 0)
-suit_matrix_dat <- dcast(sp_1008880_obs, sq_id ~ year, value.var = "suitability", fill = 0)
-#samp_matrix_data <- dcast(complete_data, sq_id ~ year, value.var = "proba_coef", fill = 0)
-effort_matrix_dat <- dcast(sp_1008880_obs, sq_id ~ year, value.var = "sampling_eff", fill = 0)
-
-# Convert to matrix (excluding sq_id column)
-sp_matrix <- as.matrix(sp_matrix_dat[, -1])
-sp_matrix[sp_matrix > 0] <- 1
-rownames(sp_matrix) <- sp_matrix_dat$sq_id  # Set row names as site IDs
-
-suit_matrix <- as.matrix(suit_matrix_dat[, -1])
-rownames(suit_matrix) <- suit_matrix_dat$sq_id  # Set row names as site IDs
-
-# samp_matrix <- as.matrix(samp_matrix_data[, -1])
-# rownames(samp_matrix) <- samp_matrix_data$sq_id  # Set row names as site IDs
-# 
-effort_matrix <- as.matrix(effort_matrix_dat[,-1])
-rownames(effort_matrix)
-
-
-plot(sp_matrix, 
-     main = "Observations per Site-Year", border = NA)
-plot(suit_matrix, 
-     main = "Suitability per Site-Year", border = NA)
-# plot(samp_matrix, 
-#      main = "Detection probability per Site-Year")
-plot(effort_matrix,
-     main = "Number of sampled species per Site-Year", border = NA)
-
-#----------------------------------------------------------------------------------
-#Colonisation/persistence matrix
-path= "saved_data/species/sp_1008880/biais_stable/biais_year1.RDS"
-strategy_matrix=strategy
-colo_persi_function <- function(path, strategy_matrix){
+ points<-sf::st_as_sf(points)
+ #----------------------------------------------------------------------------------
+ #suitability 100m in 5km resolution
+ 
+ suitab_map <- prob_raster_quantile
+ suitab_df<- data.frame(sq_id=ch_sq$sq_id)
+ 
+ spatvector <- vect(ch_sq)  # Convert 5km poly to spatvector
+ mean_extract <- terra::extract(suitab_map, spatvector, fun = mean, na.rm = TRUE)
+ suitab_df$suitability <- mean_extract[, 2]
+ #----------------------------------------------------------------------------------
+ #sampling effort
+ nb_obs<- biais_transformed[[1:14]]
+ obs_extract<- terra::extract(nb_obs[[year]],spatvector)
+ suitab_df$sampling_eff <- obs_extract[,2]
+ #----------------------------------------------------------------------------------
+ # Perform spatial intersection: Find which points fall within which polygon
+ 
+ #if more than 1 obs
+ if (nrow(points)!=0){
+ intersections <- sf::st_join(points, polygons)
+ 
+ # Count the number of points per polygon
+ point_counts <- raster::aggregate(intersections, by = list(intersections$sq_id), FUN = length)
+ 
+ # Convert the result into a data frame
+ result_df <- data.frame(
+  sq_id = point_counts$Group.1,
+  num_points = point_counts$sq_id  
+ )
+ # Merge nb of observation and suitability
+ my_df <- merge(suitab_df, result_df, by = "sq_id", all.x = TRUE)
+ }
+ 
+ #if 0 obs
+ else{
+  my_df<-suitab_df
+  my_df[, 'num_points']<-0
+ }
+ #----------------------------------------------------------------------------------
+ 
+ 
+ # Replace NA values in 'value2' with 0
+ my_df$num_points[is.na(my_df$num_points)] <- 0
+ my_df$suitability[is.na(my_df$suitability)] <- 0
+ my_df$year <- timescale[year]
+ my_df$species <- id
+ 
+ return(my_df)
+}
+occupancy_function <- function(sp_id, strategy_matrix){
  id<-gsub(".*/sp_([0-9]+)/.*", "\\1", path)
  sp.info<- data.frame(species= id) #put name in df
  sp.info$colonisation_time <- strategy_matrix$CT[strategy_matrix$taxon_id == id]%/%6 #add Colonisation time to df
@@ -226,46 +199,544 @@ colo_persi_function <- function(path, strategy_matrix){
  # global_proba <- pmax(col_coef, per_coef, suit_matrix) * samp_matrix
  # Option 3: Detectability modeled as a function of sampling effort
  global_proba <- pmax(sp_matrix,col_coef, per_coef, suit_matrix) #* (1 - pred_detect)
- plot(global_proba, border = NA)
- trend_occup_mean<- colSums(global_proba)/nrow(global_proba)
- trend_occup<- colSums(global_proba)
- plot(trend_occup_mean, xlab= "Years", ylab = "Probability of occupancy", xaxt = "n", main= "Probability of occupancy across the years")
+ return(global_proba)
+}
+occupancy_function2 <- function(sp_id, strategy_matrix,sp_matrix, effort_matrix,suit_matrix){
+ #id<-gsub(".*/sp_([0-9]+)/.*", "\\1", sp_id)
+ sp.info<- data.frame(species= sp_id) #put name in df
+ sp.info$colonisation_time <- strategy_matrix$CT[strategy_matrix$taxon_id == sp_id]%/%6 #add Colonisation time to df
+ #sp.info$colonisation_time <- 5 #add Colonisation time to df
  
- # Add custom x-axis labels
- axis(1, at = 1:length(timescale), labels = timescale)
+ sp.info$persistence_time <- strategy_matrix$PT[strategy_matrix$taxon_id == sp_id]%/%6 #add persistence time to df
+ #sp.info$persistence_time<-3
+ # Generate sigmoid curves for colonization and persistence ---------------
+ # For colonization
+ t_seq <- seq(0, sp.info$colonisation_time - 1, 1)
+ k_val <- 8/ length(t_seq)   # Adjust steepness (higher k = sharper transition)
+ t0 <- max(t_seq) / 2         # Midpoint of the transition
+ colo_coef <- 1 / (1 + exp(-k_val * (t_seq - t0)))
+ colo_coef<- append(colo_coef, 1)
+ 
+ # For persistence
+ t_seq <- seq(0, sp.info$persistence_time - 1, 1)
+ k_val <- 8 / length(t_seq)
+ t0 <- max(t_seq) / 2
+ persi_coef <- 1 / (1 + exp(-k_val * (t_seq - t0)))
+ persi_coef<- append(persi_coef, 1)
+ 
+ # Correction of occupancy probability based on colonization hypothesis
+ col_coef <- sp_matrix * 0  # Initialize with 0
+ per_coef <- sp_matrix * 0
+ sam_coef <- sp_matrix * 0
+ neo_coef <- sp_matrix * 0  # Add neophyte term if necessary
+ 
+ # colonization matrix
+ for (i in 1:nrow (sp_matrix)){
+  obsi <- which(sp_matrix[i,]== 1)
+  tj <- 1
+  for (j in 1:length(obsi)){
+   nyearj <- min(obsi[j]-tj,length(colo_coef))
+   col_coefj <- colo_coef[(length(colo_coef) - nyearj):length(colo_coef)]
+   col_coef[i,tj:obsi[j]] <- col_coefj
+   tj <- obsi[j]+1
+  }
  }
+ 
+ 
+ # # Persistence matrix
+ for (i in 1:nrow(sp_matrix)) {
+  obsi <- which(sp_matrix[i, ] == 1)
+  for (j in seq_along(obsi)) {
+   nyearj <- min(ncol(sp_matrix) - obsi[j] + 1, length(persi_coef))
+   if(nyearj > 0){
+    per_coefj <- rev(persi_coef)[1:nyearj]
+    per_coef[i, obsi[j]:(obsi[j] + nyearj - 1)] <- per_coefj
+   }
+  }
+ }
+ 
+ # # Colonization matrix
+ # for (i in 1:nrow(sp_matrix)) {
+ #  obsi <- which(sp_matrix[i, ] == 1)
+ #  tj <- 1
+ #  for (j in seq_along(obsi)) {
+ #   nyearj <- min(obsi[j] - tj, length(colo_coef))
+ #   if(nyearj > 0){
+ #    col_coefj <- colo_coef[(length(colo_coef) - nyearj):length(colo_coef)]
+ #    col_coef[i, tj:obsi[j]] <- col_coefj
+ #   }
+ #   tj <- obsi[j] + 1
+ #  }
+ # }
+ # 
+ # for (i in 1:nrow(sp_matrix)) {
+ #  obsi <- which(sp_matrix[i, ] == 1)
+ #  for (j in seq_along(obsi)) {
+ #   nyearj <- min(ncol(sp_matrix) - obsi[j] + 1, length(persi_coef))
+ #   if(nyearj > 0){
+ #    per_coefj <- rev(persi_coef)[1:nyearj]
+ #    per_coef[i, obsi[j]:(obsi[j] + nyearj - 1)] <- per_coefj
+ #   }
+ #  }
+ # }
+ 
+ 
+ 
+ to_pick <- which(apply(sp_matrix,1,sum)>1)
+ detect_data_resp <- c(sp_matrix[to_pick,])
+ detect_data_expl <- c(effort_matrix[to_pick,])
+ #plot(detect_data_resp ~ detect_data_expl)
+ 
+ m_detect <- glm(detect_data_resp ~ detect_data_expl, family = binomial)
+ detect_data_expl <- c(effort_matrix)
+ pred_detect <- predict(m_detect,newdata = as.data.frame(detect_data_expl), type = "response")
+ pred_detect <- matrix(pred_detect,
+                       nrow = nrow(sp_matrix),
+                       ncol = ncol(sp_matrix))
+ # Assemble global probability matrix
+ # NOTE: Several options are provided. Choose the one that suits your needs.
+ # Option 1: Adjust using the absence of observations when there is high sampling effort
+ # global_proba <- pmax(sp_matrix, col_coef, per_coef, suit_matrix) * (1 - samp_matrix)
+ # Option 2: Use the coefficient according to Nicolas
+ # global_proba <- pmax(col_coef, per_coef, suit_matrix) * samp_matrix
+ # Option 3: Detectability modeled as a function of sampling effort
+ global_proba <- pmax(sp_matrix,col_coef, per_coef, suit_matrix) *  (1-pred_detect)
+ #plot(global_proba, border=NA)
+ 
+ return(global_proba)
+}
+#ENLEVER PT_LIST + SP +path au dessus
+#sp="sp_1008910"
+for( sp in list_species){
+ id<- gsub("sp_", "\\1", sp)
+ for (tr in trends){
+  trend<- gsub("biais_", "\\1", tr)
+  #create a link to the files
+  species_files<-list.files(path = paste0("saved_data/species/", sp,"/", tr ), pattern = "biais_",full.names = TRUE)
+  year_numbers <- as.numeric(gsub(".*year([0-9]+)\\.RDS", "\\1", species_files))
+  species_files <- species_files[order(year_numbers)]  # Reorder the files by those extracted numbers
+
+  #read the suitability map
+  prob_raster_quantile <- readRDS(paste0("saved_data/species/", sp, "/biais_decrease/prob_raster_quantile.RDS"))
+
+  #apply the df creation on each time step
+  sp_df<-do.call(rbind, lapply(species_files, to_matrix))
+
+  #select just where there is at least one obs
+  sp_obs <- sp_df[sp_df$sq_id %in% unique(sp_df$sq_id[sp_df$num_points!=0]), ]
+  sp_obs[is.na(sp_obs)] <- 0
+
+  # Convert to matrix format
+  sp_matrix_dat <- reshape2::dcast(sp_obs, sq_id ~ year, value.var = "num_points", fill = 0)
+  suit_matrix_dat <- reshape2::dcast(sp_obs, sq_id ~ year, value.var = "suitability", fill = 0)
+  #samp_matrix_data <- dcast(complete_data, sq_id ~ year, value.var = "proba_coef", fill = 0)
+  effort_matrix_dat <- reshape2::dcast(sp_obs, sq_id ~ year, value.var = "sampling_eff", fill = 0)
+
+  # Convert to matrix (excluding sq_id column)
+  sp_matrix <- as.matrix(sp_matrix_dat[, -1])
+  sp_matrix[sp_matrix > 0] <- 1
+  rownames(sp_matrix) <- sp_matrix_dat$sq_id  # Set row names as site IDs
+
+  suit_matrix <- as.matrix(suit_matrix_dat[, -1])
+  rownames(suit_matrix) <- suit_matrix_dat$sq_id  # Set row names as site IDs
+
+  # samp_matrix <- as.matrix(samp_matrix_data[, -1])
+  # rownames(samp_matrix) <- samp_matrix_data$sq_id  # Set row names as site IDs
+  #
+  effort_matrix <- as.matrix(effort_matrix_dat[,-1])
+  rownames(effort_matrix)
+
+  # plot(sp_matrix,
+  # main = paste0("Observations per Site-Year for ",sp, ", ", tr), border = NA)
+
+  #save the three different matrices
+  saveRDS(sp_matrix, paste0("saved_data/species/", sp, "/table_trend/matrix_sp_", trend,".RDS"))
+  saveRDS(suit_matrix, paste0("saved_data/species/", sp, "/table_trend/matrix_suit_", trend,".RDS"))
+  saveRDS(effort_matrix, paste0("saved_data/species/", sp, "/table_trend/matrix_effort_", trend,".RDS"))
+
+  #create the occupancy matrix + save it with the infoflora model
+  matrix_sp <- readRDS(paste0("~/Desktop/UNIL/Master/Rstudio/Virtual species/saved_data/species/", sp, "/table_trend/matrix_sp_",trend, ".RDS"))
+  matrix_effort <- readRDS(paste0("~/Desktop/UNIL/Master/Rstudio/Virtual species/saved_data/species/", sp, "/table_trend/matrix_effort_",trend, ".RDS"))
+  matrix_suit<- readRDS(paste0("~/Desktop/UNIL/Master/Rstudio/Virtual species/saved_data/species/", sp, "/table_trend/matrix_suit_",trend, ".RDS"))
+  occupancy_matrix<-occupancy_function2(id,strategy, matrix_sp, matrix_effort,suit_matrix)
+  saveRDS(occupancy_matrix, paste0("saved_data/species/", sp, "/table_trend/occupancy_matrix_", trend,".RDS"))
+  
+  #create the supposed population trend by infoflora model
+  trend_occup<- colSums(occupancy_matrix)
+  
+  #load the table where the populations and observations per year are stored
+  trend_table <- readRDS(paste0("saved_data/species/", sp, "/table_trend/", tr, ".RDS"))
+  
+  #add the trend of infoflora to the table
+  trend_table[nrow(trend_table) + 1,] = trend_occup
+  row.names(trend_table)[row.names(trend_table) == "5"] <- "Infoflora"
+  
+  #scale the trends depending of their resolution
+  trend_table<-rbind(trend_table,trend_table[1:2,]/trend_table[2,1])
+  trend_table<-rbind(trend_table,trend_table[3:4,]/trend_table[4,1])
+  trend_table<-rbind(trend_table,trend_table[5,]/trend_table[5,1])
+  
+  saveRDS(trend_table, paste0("saved_data/species/", sp, "/table_trend/table_", trend,".RDS"))
+  
+  # # Plot the table (Observations)
+  # plot(c(1:length(trend_table[1,])), trend_table[3,], type = "o", col = "blue",
+  #      xlab = "TimeStep", ylab = "Nb of points",
+  #      xlim = c(1, length(trend_table[1,])), ylim = c(0,1.2*max(trend_table[2,])),
+  #      main = paste( trend,"species", id,  "over time"), lty= "44")
+  # 
+  # # Add the second line (Population)
+  # lines(c(1:length(trend_table[1,])), trend_table[4,], type = "o", col = "blue")
+  # 
+  # # Add the sq Observations
+  # lines(c(1:length(trend_table[1,])), trend_table[1,], type = "o", col = "orange",lty= "44")
+  # 
+  # # Add the sq Populations
+  # lines(c(1:length(trend_table[1,])), trend_table[2,], type = "o", col = "orange")
+  # 
+  # lines(c(1:length(trend_table[1,])), trend_table[5,], type = "o", col ="red")
+
+  # # Add a legend
+  # legend("topright", legend = c("Population", "Observations", "Sq populations", "Sq observations", "Infoflora"),
+  #        col = c("blue", "blue", "orange", "orange", "red"), lty= c( "solid", "44", "solid","44", "solid"), pch = 1, ncol =3)
+  pdf(paste0("saved_data/species/", sp, "/table_trend/graph_", trend,".pdf"), width = 7.4, height = 6.26)
+  
+  # Plot the table (Observations)
+  par(mar=c(5,6,4,1)+.05)
+  plot(timescale, trend_table[8,], type = "o", col = "#359B73",
+       xlab = "Time", ylab = "Occupied sites [%]",
+       xlim = c(1946,2025), ylim = c(0,max(trend_table[6:10,])+0.6),
+       main = paste( trend,"species", id,  "over time scaled"), lty= "44",  xaxt = "n")
+  axis(1, at = timescale, las=2)
+
+  # Add the second line (Population)
+  lines(timescale, trend_table[9,], type = "o", col = "#359B73")
+
+  # Add the sq Observations
+  lines(timescale, trend_table[6,], type = "o", col = "#3DB7E9",lty= "44")
+
+  # Add the sq Populations
+  lines(timescale, trend_table[7,], type = "o", col = "#3DB7E9")
+
+  lines(timescale, trend_table[10,], type = "o", col ="#E69F00")
+
+  # Add a legend
+  legend("topright", legend = c("100m Popu", "100m Obs", "5000m Popu", "5000 Obs", "5000m Infoflora"),
+         col = c("#359B73", "#359B73", "#3DB7E9", "#3DB7E9", "#E69F00"), lty= c( "solid", "44", "solid","44", "solid"), pch = 1, ncol =3)
+  dev.off()
+ }
+ # plot(sp_matrix,
+ # main = paste0("Observations per Site-Year for ",sp, ", ", trend), border = NA)
+ print(paste0(sp, " occupancy + matrices done"))
+}
+
+list_sp= pt_list
+list_sp= list_species
+trend= trends
+#loop through all the species
+mean_caculation<-function(list_sp,trend){
+ final_df<-data.frame()
+ plot(c(1:14), c(rep(0,14)), type = "o",col= "white",
+      xlab = "TimeStep", ylab = "Nb of points",
+      xlim = c(1, 14), ylim = c(0,3.5),
+      main = paste0( "Mean sq populations ", trend[2], " over Time"), lty= "44")
+ for( sp in list_species){
+   tr<- gsub("biais_", "\\1", trend[2])
+   new_table <- readRDS(paste0("saved_data/species/", sp, "/table_trend/table_",tr,".RDS"))
+   new_table$species<- sp
+   new_table$type<- c("Biais_sq","Population_sq", "Biais", "Population", "Infoflora", "Biais_sq1","Population_sq1", "Biais1", "Population1", "Infoflora1")
+
+   # # Add the sq Populations
+   lines(c(1:length(new_table[1,])), new_table[7,], type = "l", col =alpha("#E69F00", 0.5), lwd=1.5)
+
+   # # Add the second line (Infoflora)
+   lines(c(1:length(new_table[1,])), new_table[10,], type = "l", col = alpha("#3DB7E9", 0.5), lwd=1.5)
+
+   final_df<- rbind(final_df, new_table[6:10,])
+   print(sp)
+
+  
+ }
+ infl_df<-final_df[final_df$type =="Infoflora1",]
+ infl_mean <-colSums(infl_df[,1:14])/nrow(infl_df[,1:14])
+ 
+ sq_popu_df<-final_df[final_df$type =="Population_sq1",]
+ sq_popu_mean <-colSums(sq_popu_df[,1:14])/nrow(sq_popu_df[,1:14])
+ 
+ lines (infl_mean, type = "l", col = "#2271B2", lwd=2)
+ lines(sq_popu_mean, type = "l", col = "#D55E00", lwd=2)
+ #Add a legend
+ legend("bottomleft", legend = c("Mean Sq Populations", "Mean Infoflora"),
+         col = c("#D55E00", "#2271B2"), bty = "n",lwd=2, cex=1.2, lty=c(1,1,1),)
+ # legend("bottomleft", legend = c("Mean Sq Populations", " "),
+ #         col = c("red", "white"), bty = "n",lwd=2, cex=1.2, lty=c(1,1,1),)
+  
+}
+
+mean_caculation(list_sp, trends)
+
+# Reshape data to long format
+test <- final_df %>%
+ filter(type == "Infoflora1") %>%
+ pivot_longer(cols = starts_with("TimeStep"), 
+              names_to = "TimeStep", 
+              values_to = "Value") %>%
+ mutate(TimeStep = as.numeric(gsub("TimeStep", "", TimeStep)))  # Convert TimeStep to numeric
+
+# Plot
+ggplot(test, aes(x = TimeStep, y = Value, group = species)) +
+ geom_line(color = "darkgrey", alpha = 0.8) +  # Line for each species
+ geom_ribbon(aes(group = 1), color = "red", size = 1.2, ymin= min(test$Value), ymax= max(test$Value)) +  # Mean trend in blue
+ labs(x = "Time Step", y = "Value", title = "Population Trends") +
+ theme_minimal()
 
 
 
+
+plot(sp_matrix,
+     main = "Observations per Site-Year", border = NA)
+plot(suit_matrix,
+     main = "Suitability per Site-Year", border = NA)
+# plot(samp_matrix,
+#      main = "Detection probability per Site-Year")
+plot(effort_matrix,
+     main = "Number of sampled species per Site-Year", border = NA)
+
+#----------------------------------------------------------------------------------
+# #Colonisation/persistence matrix
+# path= "saved_data/species/sp_1008880/biais_stable/biais_year1.RDS"
+# strategy_matrix=strategy
+# 
+# plot(global_proba, border = NA)
+# trend_occup_mean<- colSums(global_proba)/nrow(global_proba)
+# trend_occup<- colSums(global_proba)
+# plot(trend_occup_mean, xlab= "Years", ylab = "Probability of occupancy", xaxt = "n", main= "Probability of occupancy across the years")
+# # Add custom x-axis labels
+# axis(1, at = 1:length(timescale), labels = timescale)
 
 
 #----------------------------------------
 #test
-id <- "sp_1008880"
-plot(c(1:length(biais_stable[1,])), biais_stable[3,], type = "o", col = "blue", 
-     xlab = "TimeStep", ylab = "Nb of points", 
-     xlim = c(1, length(biais_stable[1,])), ylim = c(0,1.2*max(biais_stable)), 
-     main = paste( "stable species", id,  "over Time"), lty= "44")
+id <- "sp_1008910"
+plot(c(1:length(biais_decrease[1,])), biais_decrease[3,], type = "o", col = "#359B73",
+     xlab = "TimeStep", ylab = "Nb of points",
+     xlim = c(1, length(biais_decrease[1,])), ylim = c(0,1.2*max(biais_decrease)),
+     main = paste( "decrease species", id,  "over Time"), lty= "44")
 
 # Add the second line (Population)
-lines(c(1:length(biais_stable[1,])), biais_stable[4,], type = "o", col = "blue")
+lines(c(1:length(biais_decrease[1,])), biais_decrease[4,], type = "o", col = "#359B73")
 
 # Add the sq Observations
-lines(c(1:length(biais_stable[1,])), biais_stable[1,], type = "o", col = "orange",lty= "44")
+lines(c(1:length(biais_decrease[1,])), biais_decrease[1,], type = "o", col = "#3DB7E9",lty= "44")
 
 # Add the sq Populations
-lines(c(1:length(biais_stable[1,])), biais_stable[2,], type = "o", col = "orange")
+lines(c(1:length(biais_decrease[1,])), biais_decrease[2,], type = "o", col = "#3DB7E9")
 
-lines(trend_occup, type = "o", col ="red")
+lines(trend_occup, type = "o", col ="#E69F00")
 
 # Add a legend
-legend("topright", legend = c("Population", "Observations", "Sq populations", "Sq observations", "Infoflora"), 
-       col = c("blue", "blue", "orange", "orange", "red"), lty= c( "solid", "44", "solid","44", "solid"), pch = 1, ncol =3)
+legend("topright", legend = c("Populations", "Observations", "Sq populations", "Sq observations", "Infoflora"),
+       col = c("#359B73", "#359B73", "#3DB7E9", "#3DB7E9", "#E69F00"), lty= c( "solid", "44", "solid","44", "solid"), pch = 1, ncol =3,cex=0.9 )
+
+# # Add a legend
+# legend("topright", legend = c("Populations", "Observations", "Sq populations", "Sq observations", "         "),
+#        col = c("#359B73", "#359B73", "#2271B2", "#2271B2", "white"), lty= c( "solid", "44", "solid","44", "solid"), pch = 1, ncol =3,cex=0.9 )
 
 
 
-plot(c(1:length(biais_decrease[1,])), biais_decrease[2,], type = "o", col = "orange", 
-     xlab = "TimeStep", ylab = "Nb of points", 
-     xlim = c(1, length(biais_decrease[1,])), ylim = c(0,1.2*max(biais_decrease)), 
-     main = paste( "decrease of species", id,  "over Time"))
+# Load your points as a SpatVector
+points <- vect("your_points.shp")  # Replace with your actual file
+
+# Define raster extent and resolution
+r<-prob_raster_quantile  # Adjust resolution as needed
+r<- ifel(is.na(r), NA, 0)
+
+# Compute distance raster
+dist_raster <- distance(r, year1)
+
+# Apply sigmoid function
+d50 <- 5000  # Distance where probability is 0.5
+k <- -0.001  # Controls steepness of the decay
+
+prob_raster <-1-( 1 / (1 + exp(k * (values(dist_raster) - d50))))-0.5
+values(r) <- prob_raster  # Assign computed probabilities
+
+r <- mask(r, prob_raster_quantile)
+r_mix<- r+prob_raster_quantile
+r_mix<-r_mix/ max(values(r_mix), na.rm = TRUE)
+# Save or plot
+plot(r_mix, main = "Probability Raster from Points")
+writeRaster(r, "probability_raster.tif", overwrite = TRUE)
+
+#15km de rayon
+#
+
+
+
+biais_increase_sample<- function(repetition, sample_size,sample_vector,proba_raster, max_increase,biais_raster,path,obs_by_year){
+ # #set.seed(42)
+ # repetition= 14
+ # sample_size= 100
+ # sample_vector= sample2
+ # proba_raster= prob_raster_quantile
+ # max_increase=50
+ # biais_raster= biais_transformed
+ # path= path_1
+ # obs_by_year= date_vector
+ # 
+ #  
+  
+ par(mfrow = c(1, 2))
+ start_weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ starting_points<- sample(nrow(sample_vector), size = 3, #create the first 3 points from where the popu will spread
+                          prob = start_weights, replace = FALSE)
+ starting_points<-sample_vector[starting_points,]
+ radius_rast<-ifel(is.na(proba_raster), NA, 0)# create empty raster with same resolution #fill it with 0 except where there are NAs
+ dist_raster <- distance(radius_rast, starting_points)  # Compute distance raster
+ d50 <- 8000  # Distance where probability is 0.5
+ k <- -0.001  # Controls steepness of the decay
+ 
+ dist_raster <-(1-( 1 / (1 + exp(k * (values(dist_raster) - d50))))) #0.5 in a 5km radius of the point then decay
+ dist_raster <- (dist_raster - min(dist_raster)) / (max(dist_raster) - min(dist_raster)) * 0.3
+ values(radius_rast) <- dist_raster  # Assign computed probabilities
+ radius_rast <- mask(radius_rast, proba_raster) #put the NA to keep the shape
+ par(mfg = c(1, 1))
+#plot(radius_rast)
+ 
+ weights <- terra::extract(radius_rast, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ indices_to_keep<-sample(nrow(sample_vector), size = sample_size, 
+                         prob = weights, replace = FALSE)
+ year<-sample_vector[indices_to_keep,]#recreate a spatvector from the desired individuals
+ #new_weights<-weights
+ #new_weights[indices_to_keep]<-0
+ saveRDS(year, paste(path, "/year1.RDS", sep="")) #save each year in a file
+ 
+ biais_weights<- terra::extract(biais_raster[[1]], year, xy= TRUE)[, 2]
+ biais_year<-sample(year, size = obs_by_year[1], prob = biais_weights, replace = TRUE)
+ unique_biais_year <- terra::unique(biais_year)
+ saveRDS(unique_biais_year, paste(path, "/biais_year1.RDS", sep=""))
+ 
+ num_to_add <- (max_increase/(repetition-1))/100*sample_size
+ if (num_to_add <1) {num_to_add<-1} #add at least one popu
+ 
+ par(mfg = c(1, 1))
+ plot(swiss_shape$geom) #i plot the shape of switzerland
+ par(mfg = c(1, 2))
+ plot(swiss_shape$geom)
+ 
+ start_color <- "#1c74c1" # First color
+ end_color <- "#fff064"   # Last color
+ repetition <- repetition 
+ col <- colorRampPalette(c(start_color, end_color))(repetition)
+ par(mfg = c(1, 1))
+ points(year, col= col[1], pch= 20, cex =0.5)
+ par(mfg = c(1, 2))
+ points(unique_biais_year, col= col[1], pch= 20, cex =0.5)#make points on the map
+ 
+ for(i in 1:(repetition - 1)){
+  
+  radius_rast<-ifel(is.na(proba_raster), NA, 0)# create empty raster with same resolution #fill it with 0 except where there are NAs
+  dist_raster <- distance(radius_rast, starting_points)  # Compute distance raster
+  d50 <- d50+12000  # Distance where probability is 0.5
+  k <- -0.0001  # Controls steepness of the decay
+  
+  dist_raster <-(1-( 1 / (1 + exp(k * (values(dist_raster) - d50))))) #0.5 in a 5km radius of the point then decay
+  dist_raster <- (dist_raster - min(dist_raster)) / (max(dist_raster) - min(dist_raster)) * 0.3
+  values(radius_rast) <- dist_raster  # Assign computed probabilities
+
+    # Assign computed probabilities
+  radius_rast <- mask(radius_rast, proba_raster) #put the NA to keep the shape
+  par(mfg = c(1, 1))
+  #plot(radius_rast)
+  
+  new_weights <- terra::extract(radius_rast, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+  indices_to_add<-sample(nrow(sample_vector), size = num_to_add, 
+                         prob = new_weights, replace = FALSE)# sample the individuals with weights
+  year<-rbind(year,sample_vector[indices_to_add,])#recreate a spatvector from the desired individuals
+  #new_weights[indices_to_add]<-0
+  par(mfg = c(1, 1))
+  points(year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(year, paste(path, "/year",i+1,".RDS", sep=""))#save each year in a file
+  
+  biais_weights<- terra::extract(biais_raster[[i+1]], year, xy= TRUE)[, 2]
+  #biais_year<-sample(year, size = sample_size+i*num_to_add, prob = biais_weights, replace = TRUE)
+  if (obs_by_year[i+1]==0){
+   unique_biais_year<-NA
+  }
+  else{
+   biais_year<-sample(year, size = obs_by_year[i+1], prob = biais_weights, replace = TRUE)
+   unique_biais_year <- terra::unique(biais_year)
+  }
+  par(mfg = c(1, 2))
+  points(unique_biais_year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(unique_biais_year, paste(path, "/biais_year",i+1,".RDS", sep=""))#save each year in a file
+ }
+ return(invisible(year))
+}
+biais_increase_sample(14,size_popus,sample2,prob_raster_quantile,50,biais_transformed,path_1, date_vector)
+
+biais_decrease_sample<- function(repetition, sample_size,sample_vector,proba_raster, max_reduce,biais_raster,path,obs_by_year){
+ par(mfrow = c(1, 2))
+ weights <- terra::extract(proba_raster, sample_vector, xy= TRUE)[, 2]# i extract the weights for my sample from my proba raster
+ inverse_weights <- 1 - weights
+ 
+ indices_to_keep<-sample(nrow(sample_vector), size = sample_size, 
+                         prob = weights, replace = FALSE)
+ year<-sample_vector[indices_to_keep,]#recreate a spatvector from the desired individuals
+ new_inverse_weights<-inverse_weights[indices_to_keep]
+ saveRDS(year, paste(path, "/year1.RDS", sep=""))
+ 
+ biais_weights<- terra::extract(biais_raster[[1]], year, xy= TRUE)[, 2]
+ biais_year<-sample(year, size = date_vector[1], prob = biais_weights, replace = TRUE)
+ unique_biais_year <- terra::unique(biais_year)
+ saveRDS(unique_biais_year, paste(path, "/biais_year1.RDS", sep=""))
+ num_to_delete <- (max_reduce/(repetition-1))/100*sample_size
+ if (num_to_delete <1) {num_to_delete<-1} #delete at least one population
+ 
+ par(mfg = c(1, 1))
+ plot(swiss_shape$geom) #i plot the shape of switzerland
+ par(mfg = c(1, 2))
+ plot(swiss_shape$geom)
+ 
+ start_color <- "#1c74c1" # First color
+ end_color <- "#fff064"   # Last color
+ repetition <- repetition 
+ col <- colorRampPalette(c(start_color, end_color))(repetition)
+ par(mfg = c(1, 1))
+ points(year, col= col[1], pch= 20, cex =0.5)
+ par(mfg = c(1, 2))
+ points(unique_biais_year, col= col[1], pch= 20, cex =0.5)#make points on the map
+ 
+ for(i in 1:(repetition - 1)){
+  indices_to_delete<-sample(nrow(year), size = num_to_delete, 
+                            prob = new_inverse_weights, replace = FALSE)# sample the individuals with weights
+  year<-year[-indices_to_delete,]#recreate a spatvector from the desired individuals
+  new_inverse_weights<-new_inverse_weights[-indices_to_delete]
+  par(mfg = c(1, 1))
+  points(year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(year, paste(path, "/year",i+1,".RDS", sep=""))#save each year in a file
+  biais_weights<- terra::extract(biais_raster[[i+1]], year, xy= TRUE)[, 2]
+  #biais_year<-sample(year, size = sample_size-i*num_to_delete, prob = biais_weights, replace = TRUE)
+  if (obs_by_year[i+1]==0){
+   unique_biais_year<-vect()
+  }
+  if (obs_by_year[i+1]!=0){
+   biais_year<-sample(year, size = date_vector[1+i], prob = biais_weights, replace = TRUE)
+   unique_biais_year <- terra::unique(biais_year)
+  }
+  par(mfg = c(1, 2))
+  points(unique_biais_year, col= col[i+1], pch= 20, cex =0.5)#make points on the map
+  saveRDS(unique_biais_year, paste(path, "/biais_year",i+1,".RDS", sep=""))#save each year in a file
+  
+ }
+ return(invisible(year)) 
+}
+biais_decrease_sample(14,size_popus,sample2,prob_raster_quantile, 50, biais_transformed, path_1, date_vector)
+
+
+
+
+
+
+cor(new_table[5,], new_table[2,], method = "pearson")
+
 
