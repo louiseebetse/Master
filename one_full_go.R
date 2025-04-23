@@ -49,9 +49,9 @@ pt_list<- data_list[c(2)]
 #name<- names(pt_list)
 name<- names(data_list)
 
-fun1<- function(x,h,b,c) {
- h + b*x + c*x^2
-}
+# fun1<- function(x,h,b,c) {
+#  h + b*x + c*x^2
+# }
 
 #load the file with the biais raster
 my_biais <- mixedsort(list.files(path = "biais",
@@ -336,13 +336,11 @@ rm(data,my.sp,file_name,file,dwld.date)
 
 
 my_distribution<- function(list_presences){
- #list_distribution<- list()
  name<- names(list_presences)
  #store the size of the popus after desagreging
  size_popus<- c(1:length(list_presences))
  for (sp in seq_along(list_presences)) {
   par(mfrow = c(1, 1))
-  ## CLEAR THE DATA
   
   #function to clear the data
   clear<- function(species){
@@ -379,7 +377,7 @@ my_distribution<- function(list_presences){
   
   species<-clear(list_presences[[sp]]) #clear my species data using clear()
   species <- SpatialPointsDataFrame(coords=species[,c("x", "y")], data=species[ , -c(6, 7)]) #creating a SPDF with just the coordinates
-  species<- remove.duplicates(species, zero = 500) #remove duplicate presence in a 300 radius?
+  species<- remove.duplicates(species, zero = 500) #remove duplicate presence in a 500m radius
   species<- as.data.frame(species) #come back to a data frame
   coord<- species[,c("x", "y")]
   size_popus[sp]<-as.numeric(length(coord$x))
@@ -400,7 +398,8 @@ my_distribution<- function(list_presences){
    I(dem^2) + ph + I(ph^2) + ai + I(ai^2) + bio4 + I(bio4^2) + 
    bio15 + I(bio15^2) + gdd3 + I(gdd3^2) + slope + I(slope^2)
   glm1<- glm(glm_formula, data=sp_env, family= "binomial")
-  sp_prediction<-predict(my_variables,glm1,fun=predict,type= "response")
+  sp_prediction<-predict(my_variables,glm1,fun=predict,type= "response")#create the suitability map from the glm
+  
   #plot(sp_prediction)
   # 
   # #create a vector with the names of the variables
@@ -451,33 +450,20 @@ my_distribution<- function(list_presences){
   # 
   saveRDS(sp_prediction,file = paste("saved_data/suitab_map/suitab_map_",name[sp],".RDS", sep=""))
   print(paste("the suitab map of",name[sp],"is done"))
- #}
- #return (size_popus)
-#}
 
-
-#size_popus<-my_distribution(pt_list)
-
-# for(sp in list.files(path = "saved_data/suitab_map",
-#                      pattern = NULL,
-#                      full.names = TRUE)){
 ############################################################################
 #Sample real popu
 ############################################################################
- # i=1
- # RDSproba <- readRDS(sp)
- # RDSproba[["suitab.raster"]]<-terra::unwrap(RDSproba[["suitab.raster"]])
- # terra::plot(RDSproba[["suitab.raster"]])
- # 
- ##extract probability for presences of the real species
- #prob_real_species <- terra::extract(RDSproba[["suitab.raster"]], coord, ID= F)
- prob_real_species <- terra::extract(map_probability[["suitab.raster"]], coord, ID= F)
- ##find the probability value under above which we find x% of the sample
- quantile<- quantile(prob_real_species$`VSP suitability`, 0.3, na.rm= T)
- ##i put all the raster values below this quantile values at 0
- prob_raster_quantile<-map_probability[["suitab.raster"]]
- prob_raster_quantile[prob_raster_quantile < quantile] <- 0
 
+ #extract probability for presences of the real species
+ #prob_real_species <- terra::extract(RDSproba[["suitab.raster"]], coord, ID= F)
+ prob_real_species <- terra::extract(sp_prediction, coord, ID= F)
+ #find the probability value under above which we find x% of the sample
+ quantile<- quantile(prob_real_species$`VSP suitability`, 0.3, na.rm= T)
+ #i put all the raster values below this quantile values at 0
+ prob_raster_quantile<-sp_prediction
+ prob_raster_quantile[prob_raster_quantile < quantile] <- 0
+ plot(prob_raster_quantile)
  
  ##sample presences from the modified raster(prob_raster_quantile) using 
  ##weights of probability from the raster output spatvector
@@ -487,24 +473,24 @@ my_distribution<- function(list_presences){
 ############################################################################
 #Sample with biais
 ############################################################################
-#load the species 
+#load the species
 #load(paste("SPImaster/sp/",name[i], sep=""))
 
-# # Convert the "date" column to Date format if it's not already
-#  list_presences[[sp]]$date <- as.Date(list_presences[[sp]]$date)
-# # Define the date breaks
-#  breaks <- as.Date(c("1946-12-31","1952-12-31","1958-12-31","1964-12-31","1970-12-31",
-#                      "1976-12-31","1982-12-31","1988-12-31","1994-12-31", "2000-12-31", 
-#                      "2006-12-31","2012-12-31", "2018-12-31", "2024-12-31"))
-# # Use cut() to classify the dates into groups
-#  categories <- cut(list_presences[[sp]]$date, breaks = c(as.Date("1900-01-01"), breaks), 
-#                   labels = c("Before 1946", "1947-1952", "1953-1958", "1959-1964", "1965-1970", 
-#                              "1971-1976", "1977-1982","1983-1988", "1989-1994", "1995-2000", "2001-2006", 
-#                              "2007-2012", "2013-2018", "2019-2024"), right = TRUE)
-# 
-# # Count the number of observations in each category & Convert to a numeric vector
-#  date_vector <- as.numeric(table(categories))
- 
+# Convert the "date" column to Date format if it's not already
+ list_presences[[sp]]$date <- as.Date(list_presences[[sp]]$date)
+# Define the date breaks
+ breaks <- as.Date(c("1946-12-31","1952-12-31","1958-12-31","1964-12-31","1970-12-31",
+                     "1976-12-31","1982-12-31","1988-12-31","1994-12-31", "2000-12-31",
+                     "2006-12-31","2012-12-31", "2018-12-31", "2024-12-31"))
+# Use cut() to classify the dates into groups
+ categories <- cut(list_presences[[sp]]$date, breaks = c(as.Date("1900-01-01"), breaks),
+                  labels = c("Before 1946", "1947-1952", "1953-1958", "1959-1964", "1965-1970",
+                             "1971-1976", "1977-1982","1983-1988", "1989-1994", "1995-2000", "2001-2006",
+                             "2007-2012", "2013-2018", "2019-2024"), right = TRUE)
+
+# Count the number of observations in each category & Convert to a numeric vector
+ date_vector <- as.numeric(table(categories))
+
 #I now have a vector with the number of observations of my plant per time period
 #print(date_vector)
  print(paste("the date vector of",name[sp],"is done"))
@@ -528,6 +514,12 @@ my_distribution<- function(list_presences){
  dir.create(file.path(path_1), showWarnings = FALSE)
  biais_decrease_sample(14,size_popus[sp],sample2,prob_raster_quantile, 80, biais_transformed, path_1, date_vector)
 
+ #old increase popu
+ path_1= paste("saved_data/species/sp_",name[sp],"/biais_old_increase", sep="")
+ dir.create(file.path(path_1), showWarnings = FALSE)
+ old_biais_increase_sample(14,size_popus[sp],sample2,prob_raster_quantile,80,biais_transformed,path_1, date_vector)
+ 
+ 
  # #low increase popu
  # path_1= paste("saved_data/species/sp_",name[sp],"/low_biais_increase", sep="")
  # dir.create(file.path(path_1), showWarnings = FALSE)
@@ -543,12 +535,14 @@ my_distribution<- function(list_presences){
  saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/biais_stable/prob_raster_quantile.RDS",sep=""))
  saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/biais_increase/prob_raster_quantile.RDS",sep=""))
  saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/biais_decrease/prob_raster_quantile.RDS",sep=""))
+ saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/biais_old_increase/prob_raster_quantile.RDS",sep=""))
+ 
  #saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/low_biais_increase/prob_raster_quantile.RDS",sep=""))
  #saveRDS(prob_raster_quantile, paste("saved_data/species/sp_",name[sp],"/low_biais_decrease/prob_raster_quantile.RDS",sep=""))
 
 }
 }
-my_distribution(data_list[16:17])
+my_distribution(data_list[15:17])
 #my_distribution(pt_list)
 
 #squared distribution
@@ -556,7 +550,7 @@ my_distribution(data_list[16:17])
 as.square<- function(popu,obs){
  popu<- terra::unwrap(popu)
  obs<- terra::unwrap(obs)
- if (nrow(biais_year2)==0){
+ if (nrow(obs)==0){
   counts_raster_biais<-ifel(is.na(my_biais$obs_1947_1952), NA, 0)# create empty raster with same resolution #fill it with 0 except where there are NAs
  }
  else{
@@ -597,12 +591,17 @@ for (sp in 1:(length(species_files))){
  dir.create(file.path(paste(species_files[sp],"/sq_biais_stable",sep="")), showWarnings = FALSE)
  dir.create(file.path(paste(species_files[sp],"/sq_biais_increase",sep="")), showWarnings = FALSE)
  dir.create(file.path(paste(species_files[sp],"/sq_biais_decrease",sep="")), showWarnings = FALSE)
+ dir.create(file.path(paste(species_files[sp],"/sq_biais_old_increase",sep="")), showWarnings = FALSE)
+ 
  repet <- length(list.files(path = paste(species_files[sp],"/biais_increase/", sep="")))%/%2
  for (yr in 1:repet){
   #stable
   popu_stable<- readRDS(paste(species_files[sp],"/biais_stable/year", yr, ".RDS", sep=""))
+  #plot(popu_stable)
   obs_stable<-readRDS(paste(species_files[sp],"/biais_stable/biais_year", yr, ".RDS", sep=""))
+  #points(obs_stable, col ="blue")
   squares<- as.square(popu_stable,obs_stable)
+  
   saveRDS(squares[[1]], paste(species_files[sp],"/sq_biais_stable/year",yr,".RDS", sep=""))
   saveRDS(squares[[2]], paste(species_files[sp],"/sq_biais_stable/biais_year",yr,".RDS", sep=""))
   
@@ -621,6 +620,14 @@ for (sp in 1:(length(species_files))){
   squares<- as.square(popu_decrease,obs_decrease)
   saveRDS(squares[[1]], paste(species_files[sp],"/sq_biais_decrease/year",yr,".RDS", sep=""))
   saveRDS(squares[[2]], paste(species_files[sp],"/sq_biais_decrease/biais_year",yr,".RDS", sep=""))
+  
+  #old increase
+  popu_increase<- readRDS(paste(species_files[sp],"/biais_old_increase/year", yr, ".RDS", sep=""))
+  obs_increase<-readRDS(paste(species_files[sp],"/biais_old_increase/biais_year", yr, ".RDS", sep=""))
+  squares<- as.square(popu_increase,obs_increase)
+  #print(paste0(yr, " ",1.5))
+  saveRDS(squares[[1]], paste(species_files[sp],"/sq_biais_old_increase/year",yr,".RDS", sep=""))
+  saveRDS(squares[[2]], paste(species_files[sp],"/sq_biais_old_increase/biais_year",yr,".RDS", sep=""))
   
  }
  print(paste0(species_files[sp], " is aggregated"))
@@ -670,24 +677,24 @@ table_maker<- function(raster5x5 = my_biais$obs_1947_1952, file.path ){
 trend_maker<- function(table,species,trend){
  date<-c(1946, 1952, 1958, 1964, 1970, 1976, 1982, 1988, 1994,2000,2006,2012,2018,2024)
  id <- sub(".*sp_", "", species)
- plot(date, decrease_table[3,], type = "o", col = "turquoise", 
+ plot(date, decrease_table[3,], type = "o", col = "#359B73", 
       xlab = "Time", ylab = "Nb of points", 
-      xlim = c(1946,2024), ylim = c(0,1.8*max(decrease_table)), 
-      main = paste(trend, "of species", id,  "over Time"),
+      xlim = c(1946,2024), ylim = c(0,1.4*max(decrease_table)), 
+      main = paste(trend, "of species", id,  "over Time"), lty= "44",
       xaxt = "n")
  axis(1, at = date, las=2)
  # Add the second line (Population)
- lines(date, decrease_table[4,], type = "o", col = "blue")
+ lines(date, decrease_table[4,], type = "o", col = "#359B73")
  
  # Add the sq Observations
- lines(date, decrease_table[1,], type = "o", col = "orange")
+ lines(date, decrease_table[1,], type = "o", col = "#3DB7E9",lty= "44")
  
  # Add the sq Populations
- lines(date, decrease_table[2,], type = "o", col = "red")
+ lines(date, decrease_table[2,], type = "o", col = "#3DB7E9")
  
  # Add a legend
- legend("topright", legend = c("100m_Popu", "100m_Obs", "5000m_Popu", "5000m_Obs"), 
-        col = c("blue", "turquoise", "red", "orange"), lty = 1, pch = 1, ncol =2)
+ legend("topright", legend = c("100m Popu", "100m Obs", "5000m Popu", "5000m Obs"), 
+        col = c("#359B73", "#359B73", "#3DB7E9", "#3DB7E9"), lty= c( "solid", "44", "solid","44"), pch = 1, ncol =4)
  
 }
 
@@ -713,51 +720,51 @@ for (sp in 1:(length(species_files))){
   #print(trends[tr])
   #print(tr)
   #print(decrease_table)
-  par(mfg = c(tr, 1))
+  #par(mfg = c(tr, 1))
   trend_maker(decrease_table,species_files[sp],trends[tr])
-  #add the comparison valuesto the data frame
-  t1_popu= round(decrease_table[2,1]/decrease_table[4,1],4)
-  t2_popu=round(decrease_table[2,2]/decrease_table[4,2],4)
-  t3_popu=round(decrease_table[2,3]/decrease_table[4,3],4)
-  t4_popu=round(decrease_table[2,4]/decrease_table[4,4],4)
-  t5_popu=round(decrease_table[2,5]/decrease_table[4,5],4)
-  t6_popu=round(decrease_table[2,6]/decrease_table[4,6],4)
-  t7_popu=round(decrease_table[2,7]/decrease_table[4,7],4)
-  t8_popu=round(decrease_table[2,8]/decrease_table[4,8],4)
-  t9_popu=round(decrease_table[2,9]/decrease_table[4,9],4)
-  t10_popu=round(decrease_table[2,10]/decrease_table[4,10],4)
-  t11_popu=round(decrease_table[2,11]/decrease_table[4,11],4)
-  t12_popu=round(decrease_table[2,12]/decrease_table[4,12],4)
-  t13_popu=round(decrease_table[2,13]/decrease_table[4,13],4)
-  t14_popu=round(decrease_table[2,14]/decrease_table[4,14],4)
-  sq_diff_popu= round((decrease_table[2,14]-decrease_table[2,1])/decrease_table[2,1],3)
-  diff_popu1= round((decrease_table[4,14]-decrease_table[4,1])/decrease_table[4,1],3)
-  diff_popu2= round((sq_diff_popu)/(diff_popu1),3)
-  diff_popu2[is.nan(diff_popu2)] <- 0
-  var_popu= round(var(x=c(t1_popu, t2_popu, t3_popu, t4_popu, t5_popu,t6_popu,t7_popu, t8_popu, t9_popu, t10_popu,t11_popu, t12_popu, t13_popu,t14_popu )),5)
-  t1_obs= round(decrease_table[1,1]/decrease_table[3,1],4)
-  t2_obs=round(decrease_table[1,2]/decrease_table[3,2],4)
-  t3_obs=round(decrease_table[1,3]/decrease_table[3,3],4)
-  t4_obs=round(decrease_table[1,4]/decrease_table[3,4],4)
-  t5_obs=round(decrease_table[1,5]/decrease_table[3,5],4)
-  t6_obs=round(decrease_table[1,6]/decrease_table[3,6],4)
-  t7_obs=round(decrease_table[1,7]/decrease_table[3,7],4)
-  t8_obs=round(decrease_table[1,8]/decrease_table[3,8],4)
-  t9_obs=round(decrease_table[1,9]/decrease_table[3,9],4)
-  t10_obs=round(decrease_table[1,10]/decrease_table[3,10],4)
-  t11_obs=round(decrease_table[1,11]/decrease_table[3,11],4)
-  t12_obs=round(decrease_table[1,12]/decrease_table[3,12],4)
-  t13_obs=round(decrease_table[1,13]/decrease_table[3,13],4)
-  t14_obs=round(decrease_table[1,14]/decrease_table[3,14],4)
-  sq_diff_obs=round((decrease_table[1,14]-decrease_table[1,1])/decrease_table[1,1],3)
-  diff_obs1= round((decrease_table[3,14]-decrease_table[3,1])/decrease_table[3,1],3)
-  diff_obs2= round((sq_diff_obs)/(diff_obs1),3)
-  diff_obs2[is.nan(diff_obs2)] <- 0
-  var_obs= round(var(x=c(t1_obs, t2_obs, t3_obs, t4_obs, t5_obs, t6_obs, t7_obs, t8_obs,t9_obs,t10_obs,t11_obs,t12_obs,t13_obs,t14_obs)),5)
-  comparison_df[nrow(comparison_df)+1, ] <- c(id,t1_popu,t2_popu,t3_popu,t4_popu,t5_popu,t6_popu,t7_popu, t8_popu, t9_popu, t10_popu,t11_popu, t12_popu, t13_popu,t14_popu,t1_obs,t2_obs,t3_obs,t4_obs,t5_obs,t6_obs,t7_obs, t8_obs,t9_obs,t10_obs,t11_obs,t12_obs,t13_obs,t14_obs,var_popu,var_obs, trends[tr],sq_diff_popu,diff_popu1,diff_popu2,sq_diff_obs,diff_obs1, diff_obs2)
+  # #add the comparison valuesto the data frame
+  # t1_popu= round(decrease_table[2,1]/decrease_table[4,1],4)
+  # t2_popu=round(decrease_table[2,2]/decrease_table[4,2],4)
+  # t3_popu=round(decrease_table[2,3]/decrease_table[4,3],4)
+  # t4_popu=round(decrease_table[2,4]/decrease_table[4,4],4)
+  # t5_popu=round(decrease_table[2,5]/decrease_table[4,5],4)
+  # t6_popu=round(decrease_table[2,6]/decrease_table[4,6],4)
+  # t7_popu=round(decrease_table[2,7]/decrease_table[4,7],4)
+  # t8_popu=round(decrease_table[2,8]/decrease_table[4,8],4)
+  # t9_popu=round(decrease_table[2,9]/decrease_table[4,9],4)
+  # t10_popu=round(decrease_table[2,10]/decrease_table[4,10],4)
+  # t11_popu=round(decrease_table[2,11]/decrease_table[4,11],4)
+  # t12_popu=round(decrease_table[2,12]/decrease_table[4,12],4)
+  # t13_popu=round(decrease_table[2,13]/decrease_table[4,13],4)
+  # t14_popu=round(decrease_table[2,14]/decrease_table[4,14],4)
+  # sq_diff_popu= round((decrease_table[2,14]-decrease_table[2,1])/decrease_table[2,1],3)
+  # diff_popu1= round((decrease_table[4,14]-decrease_table[4,1])/decrease_table[4,1],3)
+  # diff_popu2= round((sq_diff_popu)/(diff_popu1),3)
+  # diff_popu2[is.nan(diff_popu2)] <- 0
+  # var_popu= round(var(x=c(t1_popu, t2_popu, t3_popu, t4_popu, t5_popu,t6_popu,t7_popu, t8_popu, t9_popu, t10_popu,t11_popu, t12_popu, t13_popu,t14_popu )),5)
+  # t1_obs= round(decrease_table[1,1]/decrease_table[3,1],4)
+  # t2_obs=round(decrease_table[1,2]/decrease_table[3,2],4)
+  # t3_obs=round(decrease_table[1,3]/decrease_table[3,3],4)
+  # t4_obs=round(decrease_table[1,4]/decrease_table[3,4],4)
+  # t5_obs=round(decrease_table[1,5]/decrease_table[3,5],4)
+  # t6_obs=round(decrease_table[1,6]/decrease_table[3,6],4)
+  # t7_obs=round(decrease_table[1,7]/decrease_table[3,7],4)
+  # t8_obs=round(decrease_table[1,8]/decrease_table[3,8],4)
+  # t9_obs=round(decrease_table[1,9]/decrease_table[3,9],4)
+  # t10_obs=round(decrease_table[1,10]/decrease_table[3,10],4)
+  # t11_obs=round(decrease_table[1,11]/decrease_table[3,11],4)
+  # t12_obs=round(decrease_table[1,12]/decrease_table[3,12],4)
+  # t13_obs=round(decrease_table[1,13]/decrease_table[3,13],4)
+  # t14_obs=round(decrease_table[1,14]/decrease_table[3,14],4)
+  # sq_diff_obs=round((decrease_table[1,14]-decrease_table[1,1])/decrease_table[1,1],3)
+  # diff_obs1= round((decrease_table[3,14]-decrease_table[3,1])/decrease_table[3,1],3)
+  # diff_obs2= round((sq_diff_obs)/(diff_obs1),3)
+  # diff_obs2[is.nan(diff_obs2)] <- 0
+  # var_obs= round(var(x=c(t1_obs, t2_obs, t3_obs, t4_obs, t5_obs, t6_obs, t7_obs, t8_obs,t9_obs,t10_obs,t11_obs,t12_obs,t13_obs,t14_obs)),5)
+  # comparison_df[nrow(comparison_df)+1, ] <- c(id,t1_popu,t2_popu,t3_popu,t4_popu,t5_popu,t6_popu,t7_popu, t8_popu, t9_popu, t10_popu,t11_popu, t12_popu, t13_popu,t14_popu,t1_obs,t2_obs,t3_obs,t4_obs,t5_obs,t6_obs,t7_obs, t8_obs,t9_obs,t10_obs,t11_obs,t12_obs,t13_obs,t14_obs,var_popu,var_obs, trends[tr],sq_diff_popu,diff_popu1,diff_popu2,sq_diff_obs,diff_obs1, diff_obs2)
   saveRDS(decrease_table, paste(species_files[sp],"/table_trend/",trends[tr],".RDS",sep=""))
  }
- dev.off() 
+ #dev.off() 
 }
 print(comparison_df)
 
