@@ -202,7 +202,7 @@ occupancy_function <- function(sp_id, strategy_matrix){
  return(global_proba)
 }
 occupancy_function2 <- function(sp_id, strategy_matrix,sp_matrix, effort_matrix,suit_matrix){
- #id<-gsub(".*/sp_([0-9]+)/.*", "\\1", sp_id)
+ #id<-sub(".*sp_", "", sp_id)
  sp.info<- data.frame(species= sp_id) #put name in df
  sp.info$colonisation_time <- strategy_matrix$CT[strategy_matrix$taxon_id == sp_id]%/%6 #add Colonisation time to df
  #sp.info$colonisation_time <- 5 #add Colonisation time to df
@@ -216,6 +216,8 @@ occupancy_function2 <- function(sp_id, strategy_matrix,sp_matrix, effort_matrix,
  t0 <- max(t_seq) / 2         # Midpoint of the transition
  colo_coef <- 1 / (1 + exp(-k_val * (t_seq - t0)))
  colo_coef<- append(colo_coef, 1)
+ if (length(colo_coef)<length(timescale)){colo_coef <- c(rep(0, length(timescale) - length(colo_coef)), colo_coef)
+ }
  
  # For persistence
  t_seq <- seq(0, sp.info$persistence_time - 1, 1)
@@ -223,6 +225,8 @@ occupancy_function2 <- function(sp_id, strategy_matrix,sp_matrix, effort_matrix,
  t0 <- max(t_seq) / 2
  persi_coef <- 1 / (1 + exp(-k_val * (t_seq - t0)))
  persi_coef<- append(persi_coef, 1)
+ if (length(persi_coef)<length(timescale)){persi_coef <- c(rep(0, length(timescale) - length(persi_coef)), persi_coef)} 
+ 
  
  # Correction of occupancy probability based on colonization hypothesis
  col_coef <- sp_matrix * 0  # Initialize with 0
@@ -254,33 +258,7 @@ occupancy_function2 <- function(sp_id, strategy_matrix,sp_matrix, effort_matrix,
    }
   }
  }
- 
- # # Colonization matrix
- # for (i in 1:nrow(sp_matrix)) {
- #  obsi <- which(sp_matrix[i, ] == 1)
- #  tj <- 1
- #  for (j in seq_along(obsi)) {
- #   nyearj <- min(obsi[j] - tj, length(colo_coef))
- #   if(nyearj > 0){
- #    col_coefj <- colo_coef[(length(colo_coef) - nyearj):length(colo_coef)]
- #    col_coef[i, tj:obsi[j]] <- col_coefj
- #   }
- #   tj <- obsi[j] + 1
- #  }
- # }
- # 
- # for (i in 1:nrow(sp_matrix)) {
- #  obsi <- which(sp_matrix[i, ] == 1)
- #  for (j in seq_along(obsi)) {
- #   nyearj <- min(ncol(sp_matrix) - obsi[j] + 1, length(persi_coef))
- #   if(nyearj > 0){
- #    per_coefj <- rev(persi_coef)[1:nyearj]
- #    per_coef[i, obsi[j]:(obsi[j] + nyearj - 1)] <- per_coefj
- #   }
- #  }
- # }
- 
- 
+
  
  to_pick <- which(apply(sp_matrix,1,sum)>1)
  detect_data_resp <- c(sp_matrix[to_pick,])
@@ -305,60 +283,60 @@ occupancy_function2 <- function(sp_id, strategy_matrix,sp_matrix, effort_matrix,
  
  return(global_proba)
 }
-#ENLEVER PT_LIST + SP +path au dessus
+#I miss 5 
 #sp="sp_1008910"
 for( sp in list_species){
  id<- gsub("sp_", "\\1", sp)
  for (tr in trends){
   trend<- gsub("biais_", "\\1", tr)
-  #create a link to the files
-  species_files<-list.files(path = paste0("saved_data/species/", sp,"/", tr ), pattern = "biais_",full.names = TRUE)
-  year_numbers <- as.numeric(gsub(".*year([0-9]+)\\.RDS", "\\1", species_files))
-  species_files <- species_files[order(year_numbers)]  # Reorder the files by those extracted numbers
-
-  #read the suitability map
-  prob_raster_quantile <- readRDS(paste0("saved_data/species/", sp, "/biais_decrease/prob_raster_quantile.RDS"))
-
-  #apply the df creation on each time step
-  sp_df<-do.call(rbind, lapply(species_files, to_matrix))
-
-  #select just where there is at least one obs
-  sp_obs <- sp_df[sp_df$sq_id %in% unique(sp_df$sq_id[sp_df$num_points!=0]), ]
-  sp_obs[is.na(sp_obs)] <- 0
-
-  # Convert to matrix format
-  sp_matrix_dat <- reshape2::dcast(sp_obs, sq_id ~ year, value.var = "num_points", fill = 0)
-  suit_matrix_dat <- reshape2::dcast(sp_obs, sq_id ~ year, value.var = "suitability", fill = 0)
-  #samp_matrix_data <- dcast(complete_data, sq_id ~ year, value.var = "proba_coef", fill = 0)
-  effort_matrix_dat <- reshape2::dcast(sp_obs, sq_id ~ year, value.var = "sampling_eff", fill = 0)
-
-  # Convert to matrix (excluding sq_id column)
-  sp_matrix <- as.matrix(sp_matrix_dat[, -1])
-  sp_matrix[sp_matrix > 0] <- 1
-  rownames(sp_matrix) <- sp_matrix_dat$sq_id  # Set row names as site IDs
-
-  suit_matrix <- as.matrix(suit_matrix_dat[, -1])
-  rownames(suit_matrix) <- suit_matrix_dat$sq_id  # Set row names as site IDs
-
-  # samp_matrix <- as.matrix(samp_matrix_data[, -1])
-  # rownames(samp_matrix) <- samp_matrix_data$sq_id  # Set row names as site IDs
-  #
-  effort_matrix <- as.matrix(effort_matrix_dat[,-1])
-  rownames(effort_matrix)
-
-  # plot(sp_matrix,
-  # main = paste0("Observations per Site-Year for ",sp, ", ", tr), border = NA)
-
-  #save the three different matrices
-  saveRDS(sp_matrix, paste0("saved_data/species/", sp, "/table_trend/matrix_sp_", trend,".RDS"))
-  saveRDS(suit_matrix, paste0("saved_data/species/", sp, "/table_trend/matrix_suit_", trend,".RDS"))
-  saveRDS(effort_matrix, paste0("saved_data/species/", sp, "/table_trend/matrix_effort_", trend,".RDS"))
+#   #create a link to the files
+#   species_files<-list.files(path = paste0("saved_data/species/", sp,"/", tr ), pattern = "biais_",full.names = TRUE)
+#   year_numbers <- as.numeric(gsub(".*year([0-9]+)\\.RDS", "\\1", species_files))
+#   species_files <- species_files[order(year_numbers)]  # Reorder the files by those extracted numbers
+# 
+#   #read the suitability map
+#   prob_raster_quantile <- readRDS(paste0("saved_data/species/", sp, "/biais_decrease/prob_raster_quantile.RDS"))
+# 
+#   #apply the df creation on each time step
+#   sp_df<-do.call(rbind, lapply(species_files, to_matrix))
+# 
+#   #select just where there is at least one obs
+#   sp_obs <- sp_df[sp_df$sq_id %in% unique(sp_df$sq_id[sp_df$num_points!=0]), ]
+#   sp_obs[is.na(sp_obs)] <- 0
+# 
+#   # Convert to matrix format
+#   sp_matrix_dat <- reshape2::dcast(sp_obs, sq_id ~ year, value.var = "num_points", fill = 0)
+#   suit_matrix_dat <- reshape2::dcast(sp_obs, sq_id ~ year, value.var = "suitability", fill = 0)
+#   #samp_matrix_data <- dcast(complete_data, sq_id ~ year, value.var = "proba_coef", fill = 0)
+#   effort_matrix_dat <- reshape2::dcast(sp_obs, sq_id ~ year, value.var = "sampling_eff", fill = 0)
+# 
+#   # Convert to matrix (excluding sq_id column)
+#   sp_matrix <- as.matrix(sp_matrix_dat[, -1])
+#   sp_matrix[sp_matrix > 0] <- 1
+#   rownames(sp_matrix) <- sp_matrix_dat$sq_id  # Set row names as site IDs
+# 
+#   suit_matrix <- as.matrix(suit_matrix_dat[, -1])
+#   rownames(suit_matrix) <- suit_matrix_dat$sq_id  # Set row names as site IDs
+# # 
+# # samp_matrix <- as.matrix(samp_matrix_data[, -1])
+# # rownames(samp_matrix) <- samp_matrix_data$sq_id  # Set row names as site IDs
+# 
+#   effort_matrix <- as.matrix(effort_matrix_dat[,-1])
+#   rownames(effort_matrix)
+# 
+#   # plot(sp_matrix,
+#   # main = paste0("Observations per Site-Year for ",sp, ", ", tr), border = NA)
+# 
+#   #save the three different matrices
+#   saveRDS(sp_matrix, paste0("saved_data/species/", sp, "/table_trend/matrix_sp_", trend,".RDS"))
+#   saveRDS(suit_matrix, paste0("saved_data/species/", sp, "/table_trend/matrix_suit_", trend,".RDS"))
+#   saveRDS(effort_matrix, paste0("saved_data/species/", sp, "/table_trend/matrix_effort_", trend,".RDS"))
 
   #create the occupancy matrix + save it with the infoflora model
   matrix_sp <- readRDS(paste0("~/Desktop/UNIL/Master/Rstudio/Virtual species/saved_data/species/", sp, "/table_trend/matrix_sp_",trend, ".RDS"))
   matrix_effort <- readRDS(paste0("~/Desktop/UNIL/Master/Rstudio/Virtual species/saved_data/species/", sp, "/table_trend/matrix_effort_",trend, ".RDS"))
   matrix_suit<- readRDS(paste0("~/Desktop/UNIL/Master/Rstudio/Virtual species/saved_data/species/", sp, "/table_trend/matrix_suit_",trend, ".RDS"))
-  occupancy_matrix<-occupancy_function2(id,strategy, matrix_sp, matrix_effort,suit_matrix)
+  occupancy_matrix<-occupancy_function2(id,strategy, matrix_sp, matrix_effort,matrix_suit)
   saveRDS(occupancy_matrix, paste0("saved_data/species/", sp, "/table_trend/occupancy_matrix_", trend,".RDS"))
   
   #create the supposed population trend by infoflora model
